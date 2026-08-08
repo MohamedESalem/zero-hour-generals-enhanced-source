@@ -66,7 +66,7 @@
 
 
 enum {THREE_D_VIEW_WIDTH=800, THREE_D_VIEW_HEIGHT=600};
-enum {MAX_OBJECTS_IN_MAP = 3000};
+enum {MAX_OBJECTS_IN_MAP = 50000};
 
 class CWorldBuilderApp : public CWinApp
 {

@@ -32,12 +32,23 @@ if(MSVC)
     
     # /INCREMENTAL:NO prevents PDB size bloat in Debug configuration(s).
     add_link_options("/INCREMENTAL:NO")
+
+    # Raise usable address space from 2GB to ~4GB on 64-bit Windows for ultra-large maps.
+    # VC6's linker predates this flag, so it is only applied to modern MSVC toolchains.
+    if (NOT IS_VS6_BUILD)
+        add_link_options("/LARGEADDRESSAWARE")
+    endif()
 else()
     # We go a bit wild here and assume any other compiler we are going to use supports -g for debug info.
     # Add debug symbols to Release builds for crash dump analysis, profiling, and post-mortem debugging.
     # For MinGW, symbols will be stripped to separate .debug files (matching MSVC PDB workflow).
     string(APPEND CMAKE_CXX_FLAGS_RELEASE " -g")
     string(APPEND CMAKE_C_FLAGS_RELEASE " -g")
+
+    if(MINGW)
+        # MinGW-w64 equivalent of MSVC's /LARGEADDRESSAWARE.
+        add_link_options("-Wl,--large-address-aware")
+    endif()
 endif()
 
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
