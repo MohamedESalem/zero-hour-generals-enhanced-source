@@ -911,7 +911,7 @@ GlobalData::GlobalData()
 	m_cameraHeight = 0.0f;
 #endif
 	m_minCameraHeight = 100.0f;
-	m_maxCameraHeight = 300.0f;
+	m_maxCameraHeight = 5000.0f;
 	m_terrainHeightAtEdgeOfMap = 0.0f;
 
 	m_unitDamagedThresh = 0.5f;

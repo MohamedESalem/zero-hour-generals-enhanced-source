@@ -30,6 +30,7 @@
 
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
 
+#include "Common/FileSystem.h"
 #include "GameClient/LoadScreen.h"
 #include "GameClient/Shell.h"
 #include "GameNetwork/FileTransfer.h"
@@ -48,7 +49,17 @@ static Bool doFileTransfer( AsciiString filename, MapTransferLoadScreen *ls, Int
 	{
 		ls->setCurrentFilename(filename);
 		UnsignedInt startTime = timeGetTime();
-		const Int timeoutPeriod = 2*60*1000;
+
+		// TheSuperHackers @tweak Base 2-minute timeout plus a per-MB allowance so a much
+		// larger map file (bigger heightmap, many more placed objects) gets proportionally
+		// more time over a typical LAN link instead of racing a fixed retail-era window.
+		Int fileSizeMB = 0;
+		FileInfo fileInfo;
+		if (TheFileSystem->getFileInfo(filename, &fileInfo))
+		{
+			fileSizeMB = (Int)(fileInfo.size() / (1024*1024));
+		}
+		const Int timeoutPeriod = 2*60*1000 + fileSizeMB * 10*1000;
 		ls->processTimeout(timeoutPeriod/1000);
 
 		ls->update(0);

@@ -20,7 +20,7 @@
 // not const -- we might override from INI
 static PoolSizeRec PoolSizes[] =
 {
-	{ "PartitionContactListNode", 2048, 512 },
+	{ "PartitionContactListNode", 8192, 2048 }, // TheSuperHackers @tweak Scaled ~4x for ultra-large maps; retune from profiling.
 	{ "BattleshipUpdate", 32, 32 },
 	{ "FlyToDestAndDestroyUpdate", 32, 32 },
 	{ "MusicTrack", 32, 32 },
@@ -31,7 +31,7 @@ static PoolSizeRec PoolSizes[] =
 	{ "ProductionPrerequisitePool", 1024, 32 },
 	{ "RadarObject", 512, 32 },
 	{ "ResourceGatheringManager", 16, 16 },
-	{ "SightingInfo", 8192, 2048 },// Looks big, but all 3000 objects used to have 4 just built in.
+	{ "SightingInfo", 32768, 8192 },// Looks big, but all 3000 objects used to have 4 just built in. TheSuperHackers @tweak Scaled ~4x for ultra-large maps; retune from profiling.
 	{ "SpecialPowerTemplate", 84, 32 },
 	{ "StateMachinePool", 32, 32 },
 	{ "TeamPool", 128, 32 },	// if you increase this, increase player/team relation map pools
@@ -48,7 +48,7 @@ static PoolSizeRec PoolSizes[] =
 	{ "CommandSet", 820, 16 },
 	{ "DisplayString", 32, 32 },
 	{ "WebBrowserURL", 16, 16 },
-	{ "Drawable", 4096, 32 },
+	{ "Drawable", 16384, 128 }, // TheSuperHackers @tweak Scaled ~4x for ultra-large maps; retune from profiling.
 	{ "Image", 2048, 32 },
 	{ "ParticlePool", 1400, 1024 },
 	{ "ParticleSystemTemplatePool", 1100, 32 },
@@ -63,7 +63,7 @@ static PoolSizeRec PoolSizes[] =
 	{ "AIGuardMachinePool", 32, 32 },
 	{ "AIGuardRetaliateMachinePool", 32, 32 },
 	{ "AITNGuardMachinePool", 32, 32 },
-	{ "PathNodePool", 8192, 1024 },
+	{ "PathNodePool", 32768, 4096 }, // TheSuperHackers @tweak Scaled ~4x for ultra-large maps; retune from profiling.
 	{ "PathPool", 256, 16 },
 	{ "WorkOrder", 32, 32 },
 	{ "TeamInQueue", 32, 32 },
@@ -87,12 +87,12 @@ static PoolSizeRec PoolSizes[] =
 	{ "TempWeaponBonusHelper", 4096, 256 },
 	{ "Locomotor", 2048, 32 },
 	{ "LocomotorTemplate", 192, 32	},
-	{ "ObjectPool", 1500, 256 },
+	{ "ObjectPool", 6000, 1024 }, // TheSuperHackers @tweak Scaled ~4x for ultra-large maps; retune from profiling.
 	{ "SimpleObjectIteratorPool", 32, 32 },
-	{ "SimpleObjectIteratorClumpPool", 4096, 32 },
+	{ "SimpleObjectIteratorClumpPool", 16384, 128 }, // TheSuperHackers @tweak Scaled ~4x for ultra-large maps; retune from profiling.
 	{ "PartitionDataPool", 2048, 512 },
 	{ "BuildEntry", 32, 32 },
-	{ "Weapon", 4096, 32 },
+	{ "Weapon", 16384, 128 }, // TheSuperHackers @tweak Scaled ~4x for ultra-large maps; retune from profiling.
 	{ "WeaponTemplate", 360, 32 },
 	{ "AIUpdateInterface", 600, 32 },
 	{ "ActiveBody", 1024, 32 },

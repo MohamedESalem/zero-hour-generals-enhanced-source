@@ -119,9 +119,13 @@ public:
 #ifdef EVAL_TILING_MODES
 	enum {TILE_4x4, TILE_6x6, TILE_8x8} m_tileMode;
 #endif
+	// TheSuperHackers @tweak Widened draw windows (was 4/2 multipliers) so high-altitude
+	// zoom on ultra-large maps doesn't show terrain ending mid-view. No terrain LOD exists,
+	// so every vertex in this window renders at full density each frame - retune from
+	// profiling rather than raising further without measuring.
 	enum {
-		NORMAL_DRAW_WIDTH = 1 + 4*VERTEX_BUFFER_TILE_LENGTH,
-		NORMAL_DRAW_HEIGHT = 1 + 4*VERTEX_BUFFER_TILE_LENGTH,
+		NORMAL_DRAW_WIDTH = 1 + 12*VERTEX_BUFFER_TILE_LENGTH,
+		NORMAL_DRAW_HEIGHT = 1 + 12*VERTEX_BUFFER_TILE_LENGTH,
 		LOW_ANGLE_DRAW_WIDTH = 1 + (NORMAL_DRAW_WIDTH-1) * 2,
 		LOW_ANGLE_DRAW_HEIGHT = 1 + (NORMAL_DRAW_HEIGHT-1) * 2,
 	};

@@ -75,7 +75,7 @@ enum {MAX_WALL_PIECES = 128};
 #define PATHFIND_CELL_SIZE		10
 #define PATHFIND_CELL_SIZE_F	10.0f
 
-enum { PATHFIND_QUEUE_LEN=512};
+enum { PATHFIND_QUEUE_LEN=4096};
 
 struct TCheckMovementInfo;
 
