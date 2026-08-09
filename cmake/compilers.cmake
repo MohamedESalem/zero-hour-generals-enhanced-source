@@ -43,14 +43,16 @@ if(MSVC)
     # a match starts. Verified: PE header LARGE_ADDRESS_AWARE characteristic bit set post-link.
     add_link_options("/LARGEADDRESSAWARE")
 
-    # TheSuperHackers @diagnostic mohamed 09/08/2026 Testing whether map-loading code with
-    # recursion/stack usage proportional to map cell count (e.g. pathfind zone flood-fill,
-    # AIPathfind.cpp) overflows the default 1MB stack on an ultra-large map. Symptom matches:
-    # process vanishes silently with zero crash log/dialog during the loading screen (the
-    # engine's own SEH handler in debug_except.cpp explicitly notes stack overflow is a case
-    # it may fail to self-report, since handling one can trigger a second one). 16MB is a
-    # generous but modest bump to test the hypothesis cheaply before hunting the exact call site.
-    add_link_options("/STACK:67108864")
+    # TheSuperHackers @fix mohamed 10/08/2026 Modest stack bump for ultra-large maps.
+    # IMPORTANT: this value is the PE header's SizeOfStackReserve, which Windows uses as the
+    # default reserve for EVERY thread created without an explicit stack size -- not just the
+    # main thread. The game runs ~16 threads, so this is multiplied by ~16 in reserved address
+    # space. That matters enormously in a 32-bit process capped at ~4GB: an earlier 64MB value
+    # (used while diagnosing a suspected stack overflow) silently reserved ~1GB of address
+    # space for nothing. The real bug turned out to be the fixed-size zone tables in
+    # PathfindZoneManager::calculateZones, which now live on the heap, so the deep stack is
+    # no longer needed. 4MB leaves generous headroom over the 1MB default at ~64MB total cost.
+    add_link_options("/STACK:4194304")
 else()
     # We go a bit wild here and assume any other compiler we are going to use supports -g for debug info.
     # Add debug symbols to Release builds for crash dump analysis, profiling, and post-mortem debugging.
