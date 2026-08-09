@@ -2684,8 +2684,21 @@ void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer laye
 #endif
 
 	m_maxZone = 1;	// we start using zone 0 as a flag.
-	const Int maxZones=24000;
-	zoneStorageType zoneEquivalency[maxZones];
+
+	// TheSuperHackers @fix mohamed 09/08/2026 zoneEquivalency and collapsedZones used to be
+	// fixed 24000-entry arrays on the STACK, with the only overflow guard compiled out of
+	// Zero Hour builds (the guard below was wrapped in `#if RTS_GENERALS && ...`, and
+	// RTS_GENERALS is only defined for the base Generals build). Every ZONE_BLOCK_SIZE(10)x10
+	// block assigns at least one fresh zone and m_maxZone is never reset between blocks, so
+	// any map larger than roughly 1550x1550 cells overruns 24000 and writes past the end of a
+	// stack array -- silent stack corruption that killed the process during map load with no
+	// crash log at all. A 2176x2176 world map needs >=47500 entries. Size the tables from the
+	// real worst case (one zone per cell) and put them on the heap.
+	const Int cellCountX = globalBounds.hi.x - globalBounds.lo.x + 1;
+	const Int cellCountY = globalBounds.hi.y - globalBounds.lo.y + 1;
+	// +2 for the 0 sentinel zone and one slot of headroom for the layer zones assigned below.
+	const Int maxZones = (cellCountX * cellCountY) + LAYER_LAST + 2;
+	zoneStorageType *zoneEquivalency = MSGNEW("PathfindZones") zoneStorageType[maxZones];
 	Int i, j;
 	for (i=0; i<maxZones; i++) {
 		zoneEquivalency[i] = i;
@@ -2736,12 +2749,15 @@ void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer laye
 					if (cell->getZone()==0) {
 						cell->setZone(m_maxZone);
 						m_maxZone++;
-#if RTS_GENERALS && RETAIL_COMPATIBLE_PATHFINDING
-						if (m_maxZone>= maxZones) {
+						// TheSuperHackers @fix mohamed 09/08/2026 This guard was previously wrapped
+						// in `#if RTS_GENERALS && RETAIL_COMPATIBLE_PATHFINDING`, so it did not
+						// exist at all in Zero Hour builds and the overflow proceeded silently.
+						// maxZones is now sized from the actual map so this should be unreachable,
+						// but keep it as a hard backstop rather than corrupting memory.
+						if ((Int)m_maxZone >= maxZones) {
 							DEBUG_CRASH(("Ran out of pathfind zones.  SERIOUS ERROR! jba."));
 							break;
 						}
-#endif
 					}
 					if (cell->getConnectLayer() > LAYER_GROUND) {
  						m_zoneBlocks[xBlock][yBlock].setInteractsWithBridge(true);
@@ -2756,7 +2772,10 @@ void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer laye
 
 	// Collapse the zones into a 1,2,3... sequence, removing collapsed zones.
 	m_maxZone = 1;
-	Int collapsedZones[maxZones];
+	// TheSuperHackers @fix mohamed 09/08/2026 Was a fixed 24000-entry stack array -- see the
+	// zoneEquivalency comment above. Note this one is Int-sized, so at 24000 entries it was
+	// also ~96KB of stack on its own.
+	Int *collapsedZones = MSGNEW("PathfindZones") Int[maxZones];
 	collapsedZones[0] = 0;
 	for (i=1; i<totalZones; i++) {
 		Int zone = zoneEquivalency[i];
@@ -3008,6 +3027,11 @@ void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer laye
 		}
 	}
 #endif
+	// TheSuperHackers @fix mohamed 09/08/2026 Release the zone scratch tables that are now
+	// heap-allocated at the top of this function (they used to be fixed-size stack arrays).
+	delete [] zoneEquivalency;
+	delete [] collapsedZones;
+
 	m_nextFrameToCalculateZones = 0xffffffff;
 }
 
