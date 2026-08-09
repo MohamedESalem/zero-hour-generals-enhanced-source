@@ -23,7 +23,7 @@
 
 class Object;
 
-typedef UnsignedShort zoneStorageType;
+typedef UnsignedInt zoneStorageType;	// TheSuperHackers @fix mohamed 09/08/2026 was UnsignedShort: ultra-large maps need more than 65535 zones
 
 /**
  * This represents one cell in the pathfinding grid.
@@ -187,10 +187,12 @@ private:
 	UnsignedInt m_obstacleIsFence : 1;        ///< True if occupied by a fence.
 	UnsignedInt m_obstacleIsTransparent : 1;  ///< True if obstacle is transparent (undefined if obstacleid is invalid)
 
-	zoneStorageType m_zone : 14;              ///< Zone. Each zone is a set of adjacent terrain type.  If from & to in the same zone, you can successfully pathfind.  If not,
+	// TheSuperHackers @fix mohamed 09/08/2026 m_zone was a 14-bit field (max 16383 zones), too few for
+	// ultra-large maps. The flags and m_zone are all UnsignedInt so they share one 32-bit unit.
+	UnsignedInt m_aircraftGoal : 1;         ///< This is an aircraft goal cell.
+	UnsignedInt m_pinched : 1;              ///< This cell is surrounded by obstacle cells.
+	UnsignedInt m_zone : 26;              ///< Zone. Each zone is a set of adjacent terrain type.  If from & to in the same zone, you can successfully pathfind.  If not,
 	                                          /// you still may be able to if you can cross multiple terrain types.
-	UnsignedShort m_aircraftGoal : 1;         ///< This is an aircraft goal cell.
-	UnsignedShort m_pinched : 1;              ///< This cell is surrounded by obstacle cells.
 	UnsignedByte m_type : 4;                  ///< what type of cell terrain this is.
 	UnsignedByte m_flags : 4;                 ///< what type of units are in or moving through this cell.
 	UnsignedByte m_connectsToLayer : 4;       ///< This cell can pathfind onto this layer, if > LAYER_TOP.

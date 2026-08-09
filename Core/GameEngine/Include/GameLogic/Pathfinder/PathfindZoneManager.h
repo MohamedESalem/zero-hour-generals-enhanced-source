@@ -25,7 +25,7 @@ class PathfindCell;
 class PathfindLayer;
 class ZoneBlock;
 
-typedef UnsignedShort zoneStorageType;
+typedef UnsignedInt zoneStorageType;	// TheSuperHackers @fix mohamed 09/08/2026 was UnsignedShort: ultra-large maps need more than 65535 zones
 
 /**
  * This class manages the zones in the map.  A zone is an area in the map that
@@ -81,9 +81,9 @@ private:
 	ZoneBlock			**m_zoneBlocks;						///< Zone blocks as a matrix - contains matrix indexing into the map.
 	ICoord2D			m_zoneBlockExtent;				///< Zone block extents. Not the same scale as the pathfind extents.
 
-	UnsignedShort m_maxZone;								///< Max zone used.
+	UnsignedInt		m_maxZone;								///< Max zone used.
 	UnsignedInt		m_nextFrameToCalculateZones;		///< When should I recalculate, next?.
-	UnsignedShort m_zonesAllocated;
+	UnsignedInt		m_zonesAllocated;	// TheSuperHackers @fix mohamed 09/08/2026 widened with m_maxZone for ultra-large maps
 	zoneStorageType *m_groundCliffZones;
 	zoneStorageType *m_groundWaterZones;
 	zoneStorageType *m_groundRubbleZones;

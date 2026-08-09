@@ -23,7 +23,7 @@
 class PathfindCell;
 class PathfindLayer;
 
-typedef UnsignedShort zoneStorageType;
+typedef UnsignedInt zoneStorageType;	// TheSuperHackers @fix mohamed 09/08/2026 was UnsignedShort: ultra-large maps need more than 65535 zones
 
 /**
  * This class is a helper class for zone manager.  It maintains information regarding the

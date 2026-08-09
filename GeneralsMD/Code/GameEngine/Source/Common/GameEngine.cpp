@@ -32,6 +32,7 @@
 #include "Common/AudioAffect.h"
 #include "Common/BuildAssistant.h"
 #include "Common/CRCDebug.h"
+#include "Common/Errors.h"
 #include "Common/FramePacer.h"
 #include "Common/Radar.h"
 #include "Common/PlayerTemplate.h"
@@ -992,6 +993,42 @@ void GameEngine::execute()
 						RELEASE_CRASH((e.mFailureMessage));
 					else
 						RELEASE_CRASH(("Uncaught Exception in GameEngine::update"));
+				}
+				catch (const std::exception& e)
+				{
+					// TheSuperHackers @diagnostic mohamed 09/08/2026 The generic catch(...) below
+					// discards the exception entirely, giving no clue what actually threw. Most
+					// C++-thrown exceptions (std::bad_alloc, std::out_of_range, std::length_error,
+					// etc.) derive from std::exception and carry a useful what() message -- surface
+					// it instead of the generic "Uncaught Exception" text.
+					char buf[512];
+					_snprintf(buf, sizeof(buf), "Uncaught std::exception in GameEngine::update: %s", e.what());
+					buf[sizeof(buf) - 1] = 0;
+					RELEASE_CRASH((buf));
+				}
+				catch (ErrorCode e)
+				{
+					// TheSuperHackers @diagnostic mohamed 09/08/2026 Errors.h documents that
+					// ErrorCode values ("In almost all situations, these values will be THROWN")
+					// are the codebase's primary failure-signaling mechanism (e.g. DataChunk.cpp's
+					// `throw ERROR_CORRUPT_FILE_FORMAT`), and a plain enum isn't std::exception,
+					// so it was falling through to the fully generic catch(...) below with no info.
+					const char* name = "UNKNOWN";
+					switch (e)
+					{
+						case ERROR_BUG: name = "ERROR_BUG"; break;
+						case ERROR_OUT_OF_MEMORY: name = "ERROR_OUT_OF_MEMORY"; break;
+						case ERROR_BAD_ARG: name = "ERROR_BAD_ARG"; break;
+						case ERROR_INVALID_FILE_VERSION: name = "ERROR_INVALID_FILE_VERSION"; break;
+						case ERROR_CORRUPT_FILE_FORMAT: name = "ERROR_CORRUPT_FILE_FORMAT"; break;
+						case ERROR_BAD_INI: name = "ERROR_BAD_INI"; break;
+						case ERROR_INVALID_D3D: name = "ERROR_INVALID_D3D"; break;
+						default: break;
+					}
+					char buf[256];
+					_snprintf(buf, sizeof(buf), "Uncaught ErrorCode in GameEngine::update: %s (0x%08X)", name, (unsigned)e);
+					buf[sizeof(buf) - 1] = 0;
+					RELEASE_CRASH((buf));
 				}
 				catch (...)
 				{

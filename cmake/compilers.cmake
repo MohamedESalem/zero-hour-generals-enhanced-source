@@ -33,10 +33,23 @@ if(MSVC)
     add_link_options("/INCREMENTAL:NO")
 
     # Raise usable address space from 2GB to ~4GB on 64-bit Windows for ultra-large maps.
-    # VC6's linker predates this flag, so it is only applied to modern MSVC toolchains.
-    if (NOT IS_VS6_BUILD)
-        add_link_options("/LARGEADDRESSAWARE")
-    endif()
+    # TheSuperHackers @fix mohamed 09/08/2026 Confirmed empirically that the VC6SP6 portable
+    # toolchain's linker (link.exe) DOES accept /LARGEADDRESSAWARE and sets the corresponding
+    # PE header characteristic correctly, despite the previous assumption that "VC6's linker
+    # predates this flag." Without this, a large custom map (e.g. a 2048x2048 world map, tens
+    # of MB of heightmap data plus this build's asset set) reliably exhausts the 2GB default
+    # address space and the engine throws ERROR_OUT_OF_MEMORY (Common/Errors.h) shortly after
+    # a match starts. Verified: PE header LARGE_ADDRESS_AWARE characteristic bit set post-link.
+    add_link_options("/LARGEADDRESSAWARE")
+
+    # TheSuperHackers @diagnostic mohamed 09/08/2026 Testing whether map-loading code with
+    # recursion/stack usage proportional to map cell count (e.g. pathfind zone flood-fill,
+    # AIPathfind.cpp) overflows the default 1MB stack on an ultra-large map. Symptom matches:
+    # process vanishes silently with zero crash log/dialog during the loading screen (the
+    # engine's own SEH handler in debug_except.cpp explicitly notes stack overflow is a case
+    # it may fail to self-report, since handling one can trigger a second one). 16MB is a
+    # generous but modest bump to test the hypothesis cheaply before hunting the exact call site.
+    add_link_options("/STACK:67108864")
 else()
     # We go a bit wild here and assume any other compiler we are going to use supports -g for debug info.
     # Add debug symbols to Release builds for crash dump analysis, profiling, and post-mortem debugging.

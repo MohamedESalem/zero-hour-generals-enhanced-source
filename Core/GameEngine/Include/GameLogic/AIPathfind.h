@@ -58,7 +58,7 @@ class PathfindCell;
 
 #undef RETAIL_COMPATIBLE_PATHFINDING_ALLOCATION
 
-  typedef UnsignedShort zoneStorageType;
+  typedef UnsignedInt zoneStorageType;	// TheSuperHackers @fix mohamed 09/08/2026 was UnsignedShort: ultra-large maps need more than 65535 zones
 
 
 //----------------------------------------------------------------------------------------------------------
