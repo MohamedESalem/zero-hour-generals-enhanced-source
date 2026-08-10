@@ -418,7 +418,14 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 			m_lastMouseMoveTimeMsec = timeGetTime();
 
 			const Real spin = msg->getArgument( 1 )->real;
-			const Real zoom = -spin * View::ZoomHeightPerSecond;
+			// TheSuperHackers @tweak mohamed 10/08/2026 Was the hardcoded View::ZoomHeightPerSecond.
+			// On an ultra-large map with a raised zoom ceiling, 10 units per wheel notch means well
+			// over a hundred notches to cross the range; this is scaled with the zoom ceiling in
+			// GlobalData::parseGameDataDefinition and is INI/command-line overridable.
+			const Real zoomStep = (TheGlobalData && TheGlobalData->m_cameraZoomSpeed > 0.0f)
+				? TheGlobalData->m_cameraZoomSpeed
+				: (Real)View::ZoomHeightPerSecond;
+			const Real zoom = -spin * zoomStep;
 			TheTacticalView->userZoom(zoom);
 
 			break;
