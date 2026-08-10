@@ -195,6 +195,27 @@ public:
 #endif
 	Real m_maxCameraHeight;
 	Real m_minCameraHeight;
+
+	// TheSuperHackers @feature mohamed 10/08/2026 Ultra-large map support.
+	// MaxCameraHeight is set by the shipped INI data (GameData.ini), so raising the code
+	// default has no effect. These multipliers are applied AFTER the INI is parsed (see
+	// GlobalData::parseGameDataDefinition) so they scale whatever the data files provide.
+	// A world-scale map is ~20x wider than a stock map, so the retail zoom limit only ever
+	// shows a tiny fraction of it. NOTE: raising this alone is not enough -- the terrain
+	// renderer only draws a fixed-size window around the camera, so WorldHeightMap's
+	// *_DRAW_WIDTH/HEIGHT constants must grow to match or you zoom out into empty space.
+	Real m_maxCameraHeightMultiplier;
+	// World units of camera height per mouse-wheel notch (retail behaviour was a hardcoded
+	// View::ZoomHeightPerSecond = 10). Auto-scaled by m_maxCameraHeightMultiplier after the
+	// INI loads, so raising the zoom ceiling doesn't leave you spinning the wheel ~150 times
+	// to cross the range.
+	Real m_cameraZoomSpeed;
+	// Uniform visual scale applied to every drawable's model. This is a CLIENT-SIDE render
+	// transform only (Drawable::m_instanceScale); collision geometry, weapon ranges and
+	// pathfinding all come from the template's Geometry and are untouched, so this cannot
+	// desync multiplayer and costs no extra memory. Shrinking units makes a world-scale map
+	// feel appropriately vast without altering game balance.
+	Real m_unitVisualScale;
 	Real m_terrainHeightAtEdgeOfMap;
 	Real m_unitDamagedThresh;
 	Real m_unitReallyDamagedThresh;

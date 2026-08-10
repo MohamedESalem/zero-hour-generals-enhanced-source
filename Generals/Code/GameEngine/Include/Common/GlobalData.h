@@ -194,6 +194,12 @@ public:
 #endif
 	Real m_maxCameraHeight;
 	Real m_minCameraHeight;
+	// TheSuperHackers @feature mohamed 10/08/2026 Mirrored from the Zero Hour GlobalData so the
+	// shared Core code that reads these (CommandLine.cpp, LookAtXlat.cpp) still compiles for the
+	// base Generals target. See the Zero Hour GlobalData.h for what each one does.
+	Real m_maxCameraHeightMultiplier;
+	Real m_cameraZoomSpeed;
+	Real m_unitVisualScale;
 	Real m_terrainHeightAtEdgeOfMap;
 	Real m_unitDamagedThresh;
 	Real m_unitReallyDamagedThresh;

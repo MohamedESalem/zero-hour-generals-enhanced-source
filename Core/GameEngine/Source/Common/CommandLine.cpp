@@ -550,6 +550,44 @@ Int parseXRes(char *args[], int num)
 	return 1;
 }
 
+// TheSuperHackers @feature mohamed 10/08/2026 Runtime knobs for ultra-large maps, so the
+// "how far out / how small" values can be tuned by eye in seconds instead of a full rebuild
+// per attempt. Both are registered in paramsForEngineInit because the camera multiplier has
+// to be in place before GameData.ini is parsed (GlobalData::parseGameDataDefinition applies
+// it to the INI-provided MaxCameraHeight).
+Int parseCameraZoom(char *args[], int num)
+{
+	if (num > 1)
+	{
+		TheWritableGlobalData->m_maxCameraHeightMultiplier = (Real)atof(args[1]);
+		return 2;
+	}
+	return 1;
+}
+
+Int parseUnitScale(char *args[], int num)
+{
+	if (num > 1)
+	{
+		TheWritableGlobalData->m_unitVisualScale = (Real)atof(args[1]);
+		return 2;
+	}
+	return 1;
+}
+
+// World units of camera height per mouse-wheel notch. Note this is applied BEFORE the INI
+// load scales it by the camera multiplier, so the value given here is a pre-scale figure
+// (retail baseline is 10); pass -cameraZoom 1 alongside it to set an absolute step.
+Int parseZoomSpeed(char *args[], int num)
+{
+	if (num > 1)
+	{
+		TheWritableGlobalData->m_cameraZoomSpeed = (Real)atof(args[1]);
+		return 2;
+	}
+	return 1;
+}
+
 Int parseYRes(char *args[], int num)
 {
 	if (num > 1)
@@ -1286,6 +1324,9 @@ static CommandLineParam paramsForEngineInit[] =
 	{ "-noFog", parseNoFog },
 	{ "-maxZoom", parseMaxZoom },
 	{ "-yres", parseYRes },
+	{ "-cameraZoom", parseCameraZoom },
+	{ "-unitScale", parseUnitScale },
+	{ "-zoomSpeed", parseZoomSpeed },
 	{ "-fullVersion", parseFullVersion },
 	{ "-particleEdit", parseParticleEdit },
 	{ "-scriptDebug", parseScriptDebug },

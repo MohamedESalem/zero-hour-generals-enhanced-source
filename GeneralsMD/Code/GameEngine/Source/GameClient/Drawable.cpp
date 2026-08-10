@@ -409,6 +409,13 @@ Drawable::Drawable( const ThingTemplate *thingTemplate, DrawableStatusBits statu
 	//Real fuzzyScale = ( 1.0f + GameClientRandomValueReal( -scaleFuzziness, scaleFuzziness ));
 	m_instanceScale = thingTemplate->getAssetScale();// * fuzzyScale;
 
+	// TheSuperHackers @feature mohamed 10/08/2026 Global visual shrink for ultra-large maps.
+	// Drawable is the client/render side only -- collision geometry, weapon ranges and
+	// pathfinding all derive from the template's Geometry, not from this scale -- so this is
+	// purely cosmetic and cannot affect simulation state or cause a multiplayer mismatch.
+	if( TheGlobalData && TheGlobalData->m_unitVisualScale > 0.0f )
+		m_instanceScale *= TheGlobalData->m_unitVisualScale;
+
 	// initially not bound to an object
 	m_object = nullptr;
 

@@ -191,6 +191,9 @@ GlobalData* GlobalData::m_theOriginal = nullptr;
 #endif
 	{ "MaxCameraHeight",						INI::parseReal,				nullptr,			offsetof( GlobalData, m_maxCameraHeight ) },
 	{ "MinCameraHeight",						INI::parseReal,				nullptr,			offsetof( GlobalData, m_minCameraHeight ) },
+	{ "MaxCameraHeightMultiplier",	INI::parseReal,				nullptr,			offsetof( GlobalData, m_maxCameraHeightMultiplier ) },
+	{ "UnitVisualScale",						INI::parseReal,				nullptr,			offsetof( GlobalData, m_unitVisualScale ) },
+	{ "CameraZoomSpeed",						INI::parseReal,				nullptr,			offsetof( GlobalData, m_cameraZoomSpeed ) },
 	{ "TerrainHeightAtEdgeOfMap",					INI::parseReal,				nullptr,			offsetof( GlobalData, m_terrainHeightAtEdgeOfMap ) },
 	{ "UnitDamagedThreshold",				INI::parseReal,				nullptr,			offsetof( GlobalData, m_unitDamagedThresh ) },
 	{ "UnitReallyDamagedThreshold",	INI::parseReal,				nullptr,			offsetof( GlobalData, m_unitReallyDamagedThresh ) },
@@ -912,6 +915,12 @@ GlobalData::GlobalData()
 #endif
 	m_minCameraHeight = 100.0f;
 	m_maxCameraHeight = 5000.0f;
+	// TheSuperHackers @feature mohamed 10/08/2026 See GlobalData.h. These are applied on top of
+	// whatever the INI data provides, since the shipped GameData.ini sets MaxCameraHeight itself.
+	// Both are overridable via the INI keys registered in s_GlobalDataFieldParseTable.
+	m_maxCameraHeightMultiplier = 4.0f;
+	m_unitVisualScale = 1.0f;
+	m_cameraZoomSpeed = 10.0f;	// retail View::ZoomHeightPerSecond
 	m_terrainHeightAtEdgeOfMap = 0.0f;
 
 	m_unitDamagedThresh = 0.5f;
@@ -1256,6 +1265,19 @@ void GlobalData::parseGameDataDefinition( INI* ini )
 
 	// parse the ini weapon definition
 	ini->initFromINI( TheWritableGlobalData, s_GlobalDataFieldParseTable );
+
+	// TheSuperHackers @feature mohamed 10/08/2026 Apply the ultra-large-map camera multiplier
+	// here, AFTER the data files have been read. The shipped GameData.ini sets MaxCameraHeight
+	// explicitly, so scaling it at this point is the only way to raise the zoom ceiling without
+	// repacking the .big archives. Guarded so a multiplier of <= 0 in INI can't zero the camera.
+	if( TheWritableGlobalData->m_maxCameraHeightMultiplier > 0.0f )
+	{
+		TheWritableGlobalData->m_maxCameraHeight *= TheWritableGlobalData->m_maxCameraHeightMultiplier;
+		// Scale the per-notch zoom step by the same factor, so the number of mouse-wheel
+		// notches needed to cross the whole zoom range stays roughly what it was at retail
+		// settings. Without this a 4x zoom ceiling means 4x the spinning to get anywhere.
+		TheWritableGlobalData->m_cameraZoomSpeed *= TheWritableGlobalData->m_maxCameraHeightMultiplier;
+	}
 
 
 	// override INI values with user preferences

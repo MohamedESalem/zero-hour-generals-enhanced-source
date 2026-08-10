@@ -859,6 +859,12 @@ GlobalData::GlobalData()
 #endif
 	m_minCameraHeight = 100.0f;
 	m_maxCameraHeight = 300.0f;
+	// TheSuperHackers @feature mohamed 10/08/2026 Mirrored from Zero Hour; defaults preserve
+	// exact retail behaviour for the base Generals build (multiplier 1, retail zoom step, no
+	// visual rescale) while letting the shared Core code compile.
+	m_maxCameraHeightMultiplier = 1.0f;
+	m_cameraZoomSpeed = 10.0f;
+	m_unitVisualScale = 1.0f;
 	m_terrainHeightAtEdgeOfMap = 0.0f;
 
 	m_unitDamagedThresh = 0.5f;
