@@ -34,6 +34,7 @@
 #include "Common/Geometry.h"
 #include "Common/INI.h"
 #include "Common/RandomValue.h"
+#include "Common/WorldScale.h"
 #include "Common/Xfer.h"
 
 
@@ -58,21 +59,22 @@
 //=============================================================================
 /*static*/ void GeometryInfo::parseGeometryHeight( INI* ini, void * /*instance*/, void *store, const void* /*userData*/ )
 {
-	((GeometryInfo*)store)->m_height = INI::scanReal(ini->getNextToken());
+	// TheSuperHackers @feature mohamed 14/11/2026 -collisionScale (1.0 = retail)
+	((GeometryInfo*)store)->m_height = INI::scanReal(ini->getNextToken()) * WorldScale::getCollisionScale();
 	((GeometryInfo*)store)->calcBoundingStuff();
 }
 
 //=============================================================================
 /*static*/ void GeometryInfo::parseGeometryMajorRadius( INI* ini, void * /*instance*/, void *store, const void* /*userData*/ )
 {
-	((GeometryInfo*)store)->m_majorRadius = INI::scanReal(ini->getNextToken());
+	((GeometryInfo*)store)->m_majorRadius = INI::scanReal(ini->getNextToken()) * WorldScale::getCollisionScale();
 	((GeometryInfo*)store)->calcBoundingStuff();
 }
 
 //=============================================================================
 /*static*/ void GeometryInfo::parseGeometryMinorRadius( INI* ini, void * /*instance*/, void *store, const void* /*userData*/ )
 {
-	((GeometryInfo*)store)->m_minorRadius = INI::scanReal(ini->getNextToken());
+	((GeometryInfo*)store)->m_minorRadius = INI::scanReal(ini->getNextToken()) * WorldScale::getCollisionScale();
 	((GeometryInfo*)store)->calcBoundingStuff();
 }
 
