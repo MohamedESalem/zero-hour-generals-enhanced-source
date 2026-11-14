@@ -31,6 +31,7 @@
 #include "Common/LocalFileSystem.h"
 #include "Common/version.h"
 #include "Common/WorkingDirectory.h"
+#include "Common/WorldScale.h"
 #include "GameClient/ClientInstance.h"
 #include "GameClient/TerrainVisual.h" // for TERRAIN_LOD_MIN definition
 #include "GameClient/GameText.h"
@@ -572,6 +573,57 @@ Int parseUnitScale(char *args[], int num)
 		TheWritableGlobalData->m_unitVisualScale = (Real)atof(args[1]);
 		return 2;
 	}
+	return 1;
+}
+
+// TheSuperHackers @feature mohamed 14/11/2026 World scaling ("true miniature"), see Common/WorldScale.h.
+// The raw values are stored as given; WorldScale::resolveFromGlobalData() applies the "<= 0 is ignored"
+// and "-worldScale only fills in what was not given explicitly" rules, so flag order cannot matter.
+// These are registered in paramsForStartup (NOT paramsForEngineInit): GameData.ini is parsed before the
+// engine-init parameters, and Gravity (an acceleration) is read from it.
+Int parseWorldScale(char *args[], int num)
+{
+	if (num > 1)
+	{
+		TheWritableGlobalData->m_worldScale = (Real)atof(args[1]);
+		return 2;
+	}
+	return 1;
+}
+
+Int parseCollisionScale(char *args[], int num)
+{
+	if (num > 1)
+	{
+		TheWritableGlobalData->m_collisionScale = (Real)atof(args[1]);
+		return 2;
+	}
+	return 1;
+}
+
+Int parseSpeedScale(char *args[], int num)
+{
+	if (num > 1)
+	{
+		TheWritableGlobalData->m_speedScale = (Real)atof(args[1]);
+		return 2;
+	}
+	return 1;
+}
+
+Int parseRangeScale(char *args[], int num)
+{
+	if (num > 1)
+	{
+		TheWritableGlobalData->m_rangeScale = (Real)atof(args[1]);
+		return 2;
+	}
+	return 1;
+}
+
+Int parseWorldScaleLog(char *args[], int num)
+{
+	TheWritableGlobalData->m_worldScaleLog = TRUE;
 	return 1;
 }
 
@@ -1312,6 +1364,13 @@ static CommandLineParam paramsForStartup[] =
 	// The last successful selection wins; otherwise use the executable directory.
 	{ "-setCwd", parseSetCwd },
 	{ "-useCwd", parseUseCwd },
+	// TheSuperHackers @feature mohamed 14/11/2026 World scaling. Parsed here, before any INI is read
+	// (paramsForEngineInit is parsed AFTER GameData.ini). 1.0 = retail behaviour; <= 0 is ignored.
+	{ "-worldScale", parseWorldScale },
+	{ "-collisionScale", parseCollisionScale },
+	{ "-speedScale", parseSpeedScale },
+	{ "-rangeScale", parseRangeScale },
+	{ "-worldScaleLog", parseWorldScaleLog },
 };
 
 // These Params are parsed during Engine Init before INI data is loaded
@@ -1585,6 +1644,9 @@ void CommandLine::parseCommandLineForStartup()
 
 	if (!rts::WorkingDirectory::hasSetWorkingDirectory())
 		rts::WorkingDirectory::setExecutableWorkingDirectory();
+
+	// Combine -worldScale with the individual scales now that the whole command line has been read.
+	WorldScale::resolveFromGlobalData();
 }
 
 void CommandLine::parseCommandLineForEngineInit()

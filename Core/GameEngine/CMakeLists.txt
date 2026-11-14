@@ -134,6 +134,7 @@ set(GAMEENGINE_SRC
     #Include/Common/urllaunch.h # unused
     Include/Common/UserPreferences.h
     Include/Common/version.h
+    Include/Common/WorldScale.h
 #    Include/Common/WellKnownKeys.h
     Include/Common/WorkerProcess.h
     Include/Common/WorkingDirectory.h
@@ -597,6 +598,7 @@ set(GAMEENGINE_SRC
     Source/Common/GameUtility.cpp
 #    Source/Common/GlobalData.cpp
     Source/Common/INI/INI.cpp
+    Source/Common/WorldScale.cpp
     Source/Common/INI/INIAiData.cpp
     Source/Common/INI/INIAnimation.cpp
     Source/Common/INI/INIAudioEventInfo.cpp

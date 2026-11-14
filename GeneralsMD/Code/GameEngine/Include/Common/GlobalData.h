@@ -216,6 +216,23 @@ public:
 	// desync multiplayer and costs no extra memory. Shrinking units makes a world-scale map
 	// feel appropriately vast without altering game balance.
 	Real m_unitVisualScale;
+
+	// TheSuperHackers @feature mohamed 14/11/2026 World scaling ("true miniature"). Unlike
+	// m_unitVisualScale these change SIMULATION data, applied once at INI parse time (see
+	// Common/WorldScale.h), so 1.0 == retail behaviour exactly and nothing at runtime changes.
+	// All four are set from the command line (-worldScale/-collisionScale/-speedScale/-rangeScale)
+	// before any INI is parsed. 0 means "not given"; WorldScale::resolveFromGlobalData() then
+	// rewrites the three effective values (never <= 0) so they can be read directly:
+	//   m_collisionScale : GeometryMajorRadius/MinorRadius/Height of every object
+	//   m_speedScale     : every INI::parseVelocityReal / parseAccelerationReal value
+	//   m_rangeScale     : weapon/vision/etc. distance fields listed in WorldScale.cpp
+	//   m_worldScale     : shortcut for the three above (only fills the ones not given)
+	Real m_worldScale;
+	Real m_collisionScale;
+	Real m_speedScale;
+	Real m_rangeScale;
+	// -worldScaleLog: dump the effective values and a few sample template values to WorldScale.log
+	Bool m_worldScaleLog;
 	Real m_terrainHeightAtEdgeOfMap;
 	Real m_unitDamagedThresh;
 	Real m_unitReallyDamagedThresh;

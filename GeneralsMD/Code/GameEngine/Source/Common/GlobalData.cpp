@@ -920,6 +920,13 @@ GlobalData::GlobalData()
 	// Both are overridable via the INI keys registered in s_GlobalDataFieldParseTable.
 	m_maxCameraHeightMultiplier = 4.0f;
 	m_unitVisualScale = 1.0f;
+	// World scaling: 0 = "not given on the command line". WorldScale::resolveFromGlobalData()
+	// turns these into the effective values (1.0 when nothing was requested = retail behaviour).
+	m_worldScale = 0.0f;
+	m_collisionScale = 0.0f;
+	m_speedScale = 0.0f;
+	m_rangeScale = 0.0f;
+	m_worldScaleLog = FALSE;
 	m_cameraZoomSpeed = 10.0f;	// retail View::ZoomHeightPerSecond
 	m_terrainHeightAtEdgeOfMap = 0.0f;
 

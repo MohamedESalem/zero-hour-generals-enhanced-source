@@ -40,6 +40,7 @@
 #include "Common/Module.h"
 #include "Common/ModuleFactory.h"
 #include "Common/NameKeyGenerator.h"
+#include "Common/WorldScale.h"
 
 // behavior includes
 #include "GameLogic/Module/AutoHealBehavior.h"
@@ -585,7 +586,10 @@ ModuleData* ModuleFactory::newModuleDataFromINI(INI* ini, const AsciiString& nam
 	const ModuleTemplate* moduleTemplate = findModuleTemplate(name, type);
 	if (moduleTemplate)
 	{
+		// TheSuperHackers @feature mohamed 14/11/2026 Tell WorldScale which module the fields below belong to.
+		WorldScale::pushModule( name.str() );
 		ModuleData* md = (*moduleTemplate->m_createDataProc)(ini);
+		WorldScale::popModule();
 		md->setModuleTagNameKey( NAMEKEY( moduleTag ) );
 		m_moduleDataList.push_back(md);
 		return md;

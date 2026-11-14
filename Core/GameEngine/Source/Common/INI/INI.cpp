@@ -33,6 +33,7 @@
 
 #include "Common/INI.h"
 #include "Common/INIException.h"
+#include "Common/WorldScale.h"
 
 #include "Common/DamageFX.h"
 #include "Common/file.h"
@@ -405,7 +406,11 @@ UnsignedInt INI::load( AsciiString filename, INILoadType loadType, Xfer *pXfer )
 					strcpy(m_curBlockStart, m_buffer);
 					#endif
 					try {
+						// TheSuperHackers @feature mohamed 14/11/2026 World scaling needs to know which
+						// block ("Weapon", "Object", ...) the fields below belong to.
+						WorldScale::setBlock( token );
 						(*parse)( this );
+						WorldScale::setBlock( nullptr );
 
 					} catch (...) {
 						DEBUG_CRASH(("Error parsing block '%s' in INI file '%s'", token, m_filename.str()) );
@@ -1542,7 +1547,14 @@ void INI::initFromINIMulti( void *what, const MultiIniFieldParse& parseTableList
 						// parse this block and check for parse errors
 						try {
 
-						(*parse)( this, what, (char *)what + offset + parseTableList.getNthExtraOffset(ptIdx), userData );
+						// TheSuperHackers @feature mohamed 14/11/2026 World scaling hook: remember the field
+						// name for INI::parseVelocityReal/parseAccelerationReal, and let WorldScale multiply
+						// the stored value afterwards if this field is in its collision/range table.
+						void *fieldStore = (char *)what + offset + parseTableList.getNthExtraOffset(ptIdx);
+						WorldScale::setField( field );
+						(*parse)( this, what, fieldStore, userData );
+						WorldScale::postParseField( field, parse, fieldStore );
+						WorldScale::setField( nullptr );
 
 						} catch (...) {
 							DEBUG_CRASH( ("[LINE: %d - FILE: '%s'] Error reading field '%s' of block '%s'",
@@ -1815,6 +1827,8 @@ void INI::parseVelocityReal( INI *ini, void * /*instance*/, void *store, const v
 {
 	const char *token = ini->getNextToken();
 	Real val = scanReal(token);
+	// TheSuperHackers @feature mohamed 14/11/2026 -speedScale (1.0 = retail; cosmetic fields excluded)
+	val *= WorldScale::getSpeedScaleForCurrentField();
 	*(Real *)store = ConvertVelocityInSecsToFrames(val);
 }
 
@@ -1824,6 +1838,8 @@ void INI::parseAccelerationReal( INI *ini, void * /*instance*/, void *store, con
 {
 	const char *token = ini->getNextToken();
 	Real val = scanReal(token);
+	// TheSuperHackers @feature mohamed 14/11/2026 -speedScale (1.0 = retail; cosmetic fields excluded)
+	val *= WorldScale::getSpeedScaleForCurrentField();
 	*(Real *)store = ConvertAccelerationInSecsToFrames(val);
 }
 

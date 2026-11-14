@@ -34,6 +34,7 @@
 #include "Common/CRCDebug.h"
 #include "Common/FramePacer.h"
 #include "Common/Radar.h"
+#include "Common/WorldScale.h"
 #include "Common/PlayerTemplate.h"
 #include "Common/Team.h"
 #include "Common/PlayerList.h"
@@ -402,6 +403,9 @@ void GameEngine::init()
 		// special-case: parse command-line parameters after loading global data
 		CommandLine::parseCommandLineForEngineInit();
 
+		// TheSuperHackers @feature mohamed 14/11/2026 Report the effective world scales (WorldScale.log).
+		WorldScale::logEffective();
+
 		TheArchiveFileSystem->loadMods();
 
 		// doesn't require resets so just create a single instance here.
@@ -466,6 +470,7 @@ void GameEngine::init()
 		initSubsystem(TheArmorStore,"TheArmorStore", MSGNEW("GameEngineSubsystem") ArmorStore(), &xferCRC, nullptr, "Data\\INI\\Armor");
 		initSubsystem(TheBuildAssistant,"TheBuildAssistant", MSGNEW("GameEngineSubsystem") BuildAssistant, nullptr);
 		initSubsystem(TheThingFactory,"TheThingFactory", createThingFactory(), &xferCRC, "Data\\INI\\Default\\Object", "Data\\INI\\Object");
+		WorldScale::logSamples();	// TheSuperHackers @feature mohamed 14/11/2026 sample template values after scaling
 
 #if RETAIL_COMPATIBLE_CRC
 		if (xferCRC.getCRC() == 0xD9A74E13)

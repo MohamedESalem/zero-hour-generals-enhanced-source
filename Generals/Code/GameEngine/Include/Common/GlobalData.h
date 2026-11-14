@@ -200,6 +200,13 @@ public:
 	Real m_maxCameraHeightMultiplier;
 	Real m_cameraZoomSpeed;
 	Real m_unitVisualScale;
+	// World scaling fields -- see the Zero Hour GlobalData.h. Present here so the shared Core
+	// code (CommandLine.cpp, WorldScale.cpp, INI.cpp) compiles for the base Generals target.
+	Real m_worldScale;
+	Real m_collisionScale;
+	Real m_speedScale;
+	Real m_rangeScale;
+	Bool m_worldScaleLog;
 	Real m_terrainHeightAtEdgeOfMap;
 	Real m_unitDamagedThresh;
 	Real m_unitReallyDamagedThresh;

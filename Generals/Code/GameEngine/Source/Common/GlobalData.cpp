@@ -865,6 +865,11 @@ GlobalData::GlobalData()
 	m_maxCameraHeightMultiplier = 1.0f;
 	m_cameraZoomSpeed = 10.0f;
 	m_unitVisualScale = 1.0f;
+	m_worldScale = 0.0f;
+	m_collisionScale = 0.0f;
+	m_speedScale = 0.0f;
+	m_rangeScale = 0.0f;
+	m_worldScaleLog = FALSE;
 	m_terrainHeightAtEdgeOfMap = 0.0f;
 
 	m_unitDamagedThresh = 0.5f;
