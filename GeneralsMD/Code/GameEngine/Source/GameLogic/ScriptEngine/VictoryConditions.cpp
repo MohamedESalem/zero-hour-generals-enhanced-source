@@ -86,6 +86,7 @@ public:
 	virtual Bool hasSinglePlayerBeenDefeated(Player *player) override;	///< has a specific player lost?
 
 	virtual void cachePlayerPtrs() override;											///< players have been created - cache the ones of interest
+	virtual void declareAllianceVictory(Player *victoriousPlayer) override;	///< conquest mode: this alliance has won
 
 	virtual Bool isLocalAlliedVictory() override;								///< convenience function
 	virtual Bool isLocalAlliedDefeat() override;									///< convenience function
@@ -275,6 +276,27 @@ void VictoryConditions::markAllianceVictorious(Player* victoriousPlayer)
 		Player* player = m_players[i];
 		if (player == victoriousPlayer || (player && areAllies(player, victoriousPlayer)))
 			m_isVictorious[i] = true;
+	}
+}
+
+// TheSuperHackers @feature mohamed 15/11/2026 Conquest mode (GameLogic/ConquestManager.h): an
+// alliance holds enough territories. The game is over in the same state the stock rule reaches when
+// one alliance is left, so the multiplayer scripts (MULTIPLAYER_ALLIED_VICTORY / _DEFEAT) put up the
+// usual end screens. Nobody's units are touched; the losers simply have lost.
+//-------------------------------------------------------------------------------------------------
+void VictoryConditions::declareAllianceVictory(Player *victoriousPlayer)
+{
+	if (!victoriousPlayer || m_singleAllianceRemaining)
+		return;
+
+	m_singleAllianceRemaining = true;
+	m_endFrame = TheGameLogic->getFrame();
+	markAllianceVictorious(victoriousPlayer);
+
+	for (Int i = 0; i < MAX_PLAYER_COUNT; ++i)
+	{
+		if (m_players[i] && !m_isVictorious[i])
+			m_isDefeated[i] = true;
 	}
 }
 

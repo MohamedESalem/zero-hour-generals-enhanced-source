@@ -76,6 +76,7 @@
 #include "GameClient/GlobalLanguage.h"
 
 #include "GameLogic/AIGuard.h"
+#include "GameLogic/ConquestManager.h"
 #include "GameLogic/Weapon.h"
 #include "GameLogic/Object.h"
 #include "GameLogic/GameLogic.h"
@@ -1266,12 +1267,18 @@ InGameUI::InGameUI()
 
 	m_soloNexusSelectedDrawableID = INVALID_DRAWABLE_ID;
 
+	m_conquestStatus = nullptr;
+	m_conquestStatusHeld = -1;
+	m_conquestStatusNeeded = -1;
+
 }
 
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
 InGameUI::~InGameUI()
 {
+	clearConquestOverlay();
+
 	delete TheControlBar;
 	TheControlBar = nullptr;
 
@@ -1832,6 +1839,9 @@ void InGameUI::preDraw()
 	// draw the floating text first;
 	drawFloatingText();
 
+	// conquest mode: territory names and the territory count
+	drawConquestOverlay();
+
 	// draw world animations
 	updateAndDrawWorldAnimations();
 
@@ -2216,6 +2226,7 @@ void InGameUI::reset()
 	setSuperweaponDisplayEnabledByScript(true);
 
 	clearFloatingText();
+	clearConquestOverlay();
 	clearWorldAnimations();
 	resetIdleWorker();
 	// clear hint lists
@@ -4403,6 +4414,13 @@ void InGameUI::displayCantBuildMessage( LegalBuildCode lbc )
 			break;
 
 		//---------------------------------------------------------------------------------------------
+		// TheSuperHackers @feature mohamed 15/11/2026 Conquest mode. Plain text: there is no string
+		// table entry for it, and a missing label would show up as "MISSING: ...".
+		case LBC_OUTSIDE_TERRITORY:
+			messageNoFormat( UnicodeString( L"You can only build inside countries you control" ) );
+			break;
+
+		//---------------------------------------------------------------------------------------------
 		case LBC_GENERIC_FAILURE:
 		default:
 
@@ -5493,6 +5511,107 @@ void InGameUI::drawFloatingText()
 		}
 
 	}
+}
+
+//-------------------------------------------------------------------------------------------------
+/** TheSuperHackers @feature mohamed 15/11/2026 Conquest mode: the name of every territory at its
+	* label point, in the colour of whoever holds it, and at the top of the screen how many
+	* territories the local player's alliance holds against the number needed to win. A name is
+	* left out while its territory is smaller on screen than the text, so the small countries
+	* appear as the camera comes down. The fog does not hide the names. */
+//-------------------------------------------------------------------------------------------------
+void InGameUI::drawConquestOverlay()
+{
+	if( TheConquestManager == nullptr || !TheConquestManager->isActive() )
+	{
+		clearConquestOverlay();
+		return;
+	}
+
+	if( !TheGameLogic->getDrawIconUI() )
+		return;
+
+	const Int count = TheConquestManager->getTerritoryCount();
+	if( (Int)m_conquestLabels.size() != count || m_conquestStatus == nullptr )
+	{
+		clearConquestOverlay();
+
+		GameFont *font = TheFontLibrary->getFont( m_drawableCaptionFont, TheGlobalLanguageData->adjustFontSize( 14 ), TRUE );
+		for( Int i = 0; i < count; ++i )
+		{
+			DisplayString *label = TheDisplayStringManager->newDisplayString();
+			label->reset();
+			label->setFont( font );
+			label->setText( TheConquestManager->getTerritory( i )->name );
+			m_conquestLabels.push_back( label );
+		}
+
+		m_conquestStatus = TheDisplayStringManager->newDisplayString();
+		m_conquestStatus->reset();
+		m_conquestStatus->setFont( font );
+	}
+
+	const Color neutralColor = GameMakeColor( 255, 255, 255, 255 );
+	const Color dropColor = GameMakeColor( 0, 0, 0, 255 );
+
+	for( Int i = 0; i < count; ++i )
+	{
+		const ConquestManager::Territory *territory = TheConquestManager->getTerritory( i );
+
+		ICoord2D center;
+		if( !TheTacticalView->worldToScreen( &territory->labelPos, &center ) )
+			continue;
+
+		// how large the open land around the label point is on screen right now
+		Coord3D edgePos = territory->labelPos;
+		edgePos.x += territory->labelRadius;
+		ICoord2D edge;
+		if( TheTacticalView->worldToScreenTriReturn( &edgePos, &edge ) == View::WTS_INVALID )
+			continue;
+
+		const Real dx = (Real)( edge.x - center.x );
+		const Real dy = (Real)( edge.y - center.y );
+		const Real radiusOnScreen = (Real)sqrt( (double)( dx * dx + dy * dy ) );
+
+		Int width, height;
+		m_conquestLabels[ i ]->getSize( &width, &height );
+		if( 4.0f * radiusOnScreen < (Real)width )
+			continue;
+
+		const Player *owner = TheConquestManager->getTerritoryOwner( i );
+		m_conquestLabels[ i ]->draw( center.x - width / 2, center.y - height / 2,
+			owner ? owner->getPlayerColor() : neutralColor, dropColor );
+	}
+
+	const Player *viewer = rts::getObservedOrLocalPlayer();
+	const Int held = TheConquestManager->getTerritoryCountForAlliance( viewer );
+	const Int needed = TheConquestManager->getVictoryCount();
+	if( held != m_conquestStatusHeld || needed != m_conquestStatusNeeded )
+	{
+		UnicodeString text;
+		text.format( L"Countries %d / %d", held, needed );
+		m_conquestStatus->setText( text );
+		m_conquestStatusHeld = held;
+		m_conquestStatusNeeded = needed;
+	}
+
+	Int width, height;
+	m_conquestStatus->getSize( &width, &height );
+	m_conquestStatus->draw( ( TheDisplay->getWidth() - width ) / 2, 6, viewer->getPlayerColor(), dropColor );
+}
+
+//-------------------------------------------------------------------------------------------------
+void InGameUI::clearConquestOverlay()
+{
+	for( std::vector<DisplayString *>::iterator it = m_conquestLabels.begin(); it != m_conquestLabels.end(); ++it )
+		TheDisplayStringManager->freeDisplayString( *it );
+	m_conquestLabels.clear();
+
+	if( m_conquestStatus )
+		TheDisplayStringManager->freeDisplayString( m_conquestStatus );
+	m_conquestStatus = nullptr;
+	m_conquestStatusHeld = -1;
+	m_conquestStatusNeeded = -1;
 }
 
 //-------------------------------------------------------------------------------------------------

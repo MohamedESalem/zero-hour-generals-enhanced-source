@@ -81,6 +81,7 @@
 #include "GameLogic/AI.h"
 #include "GameLogic/AIPathfind.h"
 #include "GameLogic/CaveSystem.h"
+#include "GameLogic/ConquestManager.h"
 #include "GameLogic/CrateSystem.h"
 #include "GameLogic/FPUControl.h"
 #include "GameLogic/GameLogic.h"
@@ -370,6 +371,9 @@ GameLogic::~GameLogic()
 	delete TheScriptEngine;
 	TheScriptEngine = nullptr;
 
+	delete TheConquestManager;
+	TheConquestManager = nullptr;
+
 	// Null out TheGameLogic
 	TheGameLogic = nullptr;
 }
@@ -404,6 +408,9 @@ void GameLogic::init()
 	TheScriptEngine = NEW ScriptEngine;
 	TheScriptEngine->init();
 	TheScriptEngine->setName("TheScriptEngine");
+
+	// TheSuperHackers @feature mohamed 15/11/2026 Global conquest mode; idle unless the map has territories.
+	TheConquestManager = NEW ConquestManager;
 
 	// create a team for the player
 	//DEBUG_ASSERTCRASH(ThePlayerList, ("null ThePlayerList"));
@@ -449,6 +456,7 @@ void GameLogic::reset()
 	TheTerrainLogic->reset();
 	TheAI->reset();
 	TheScriptEngine->reset();
+	TheConquestManager->reset();
 
 	m_CRC = 0;
 	for(Int i = 0; i < MAX_SLOTS; ++i)
@@ -1986,6 +1994,10 @@ void GameLogic::tryStartNewGame( Bool loadingSaveGame )
 	sprintf(Buf,"After loading objects=%f",((double)(endTime64-startTime64)/(double)(freq64)*1000.0));
 	DEBUG_LOG(("%s", Buf));
 	#endif
+
+	// TheSuperHackers @feature mohamed 15/11/2026 Read the map's territories, if it has any. The map
+	// objects (the capitals' hospitals) exist by now and the partition cells are laid out.
+	TheConquestManager->newMap( loadingSaveGame );
 
 	// place initial network buildings/units
 	if (TheGameInfo && !loadingSaveGame)
@@ -3756,6 +3768,9 @@ void GameLogic::update()
 	{
 		TheTerrainLogic->UPDATE();
 	}
+
+	// Conquest mode: who holds which territory. Before the CRC, since it moves shroud lookers.
+	TheConquestManager->update();
 
 	// force CRC calculation, so we can keep a cache of the last N CRCs.  We do this right where the recorder
 	// would be getting the CRC anyway, so replays can get the CRCs from the exact instant in time as the original.

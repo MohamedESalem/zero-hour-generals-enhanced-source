@@ -1509,6 +1509,13 @@ public:
 		*/
 	void shroudMapForPlayer( Int playerIndex );
 
+	/**
+		TheSuperHackers @feature mohamed 15/11/2026 Conquest mode: adds (or takes back) one permanent
+		looker of the given player on each listed cell (index = y * getCellCountX() + x), which keeps
+		a whole territory in view for its owner. Every add must be undone with exactly one remove.
+		*/
+	void adjustLookersForCells( const std::vector<Int> &cellIndices, Int playerIndex, Bool add );
+
 	/** this doesn't change the actual shroud values in logic, just pushes them
 		back out to the display... this should generally only be used when the local
 		player changes.

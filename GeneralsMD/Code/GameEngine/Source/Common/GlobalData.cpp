@@ -869,6 +869,8 @@ GlobalData::GlobalData()
 	m_speedScale = 0.0f;
 	m_rangeScale = 0.0f;
 	m_worldScaleLog = FALSE;
+	m_conquestDisabled = FALSE;
+	m_conquestVictoryPercent = 0;	// 0 = the percentage stored in the map
 	m_cameraZoomSpeed = 10.0f;	// retail View::ZoomHeightPerSecond
 	m_terrainHeightAtEdgeOfMap = 0.0f;
 

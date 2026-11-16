@@ -204,6 +204,9 @@ public:
 	Real m_speedScale;
 	Real m_rangeScale;
 	Bool m_worldScaleLog;
+	// Conquest mode flags -- Zero Hour only; here so the shared CommandLine.cpp compiles.
+	Bool m_conquestDisabled;
+	Int m_conquestVictoryPercent;
 	Real m_terrainHeightAtEdgeOfMap;
 	Real m_unitDamagedThresh;
 	Real m_unitReallyDamagedThresh;

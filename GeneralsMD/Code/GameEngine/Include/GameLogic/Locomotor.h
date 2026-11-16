@@ -127,6 +127,7 @@ class LocomotorTemplate : public Overridable
 {
 	MEMORY_POOL_GLUE_WITH_USERLOOKUP_CREATE( LocomotorTemplate, "LocomotorTemplate"  )
 	friend class Locomotor;
+	friend class WorldScale;	// WorldScale::logSamples reads the scaled speeds for its diagnostics log
 
 public:
 

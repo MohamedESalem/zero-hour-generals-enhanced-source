@@ -861,6 +861,8 @@ GlobalData::GlobalData()
 	m_speedScale = 0.0f;
 	m_rangeScale = 0.0f;
 	m_worldScaleLog = FALSE;
+	m_conquestDisabled = FALSE;
+	m_conquestVictoryPercent = 0;
 	m_terrainHeightAtEdgeOfMap = 0.0f;
 
 	m_unitDamagedThresh = 0.5f;

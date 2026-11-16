@@ -230,6 +230,11 @@ public:
 	Real m_rangeScale;
 	// -worldScaleLog: dump the effective values and a few sample template values to WorldScale.log
 	Bool m_worldScaleLog;
+	// TheSuperHackers @feature mohamed 15/11/2026 Global conquest mode (GameLogic/ConquestManager.h).
+	// The mode is on for every map that carries a ConquestData chunk; -noConquest turns it off and
+	// -conquestPercent overrides the share of territories needed to win (0 = use the map's value).
+	Bool m_conquestDisabled;
+	Int m_conquestVictoryPercent;
 	Real m_terrainHeightAtEdgeOfMap;
 	Real m_unitDamagedThresh;
 	Real m_unitReallyDamagedThresh;
