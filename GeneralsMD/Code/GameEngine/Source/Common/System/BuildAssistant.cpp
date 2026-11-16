@@ -45,6 +45,7 @@
 #include "GameClient/InGameUI.h"
 #include "GameClient/TerrainVisual.h"
 #include "GameLogic/AI.h"
+#include "GameLogic/ConquestManager.h"
 #include "GameLogic/PartitionManager.h"
 #include "GameLogic/TerrainLogic.h"
 #include "GameLogic/AIPathfind.h"
@@ -924,6 +925,19 @@ LegalBuildCode BuildAssistant::isLocationLegalToBuild( const Coord3D *worldPos,
 	TheTerrainLogic->getMaximumPathfindExtent(&mapExtent);
 	if (!mapExtent.isInRegion(worldPos->asCoord2D())) {
 		return LBC_RESTRICTED_TERRAIN;
+	}
+
+	// TheSuperHackers @feature mohamed 15/11/2026 Conquest mode: structures only go up inside a
+	// territory that the builder or one of his allies holds. Checked for every caller (placement
+	// cursor, the build command, the dozer on arrival, the AI), before anything else is revealed.
+	if( TheConquestManager && TheConquestManager->isActive() && build && build->isKindOf( KINDOF_STRUCTURE ) )
+	{
+		const Player *builderPlayer = player;
+		if( builderPlayer == nullptr && builderObject )
+			builderPlayer = builderObject->getControllingPlayer();
+
+		if( builderPlayer && !TheConquestManager->canPlayerBuildAt( builderPlayer, worldPos ) )
+			return LBC_OUTSIDE_TERRITORY;
 	}
 
 	// check shroud level

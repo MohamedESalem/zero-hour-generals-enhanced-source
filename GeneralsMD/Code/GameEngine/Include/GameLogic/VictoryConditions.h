@@ -63,6 +63,10 @@ public:
 
 	virtual void cachePlayerPtrs() = 0;											///< players have been created - cache the ones of interest
 
+	/// TheSuperHackers @feature mohamed 15/11/2026 Conquest mode: end the game now, with this player
+	/// and his allies as the winners and everybody else defeated, whatever they still own.
+	virtual void declareAllianceVictory(Player *victoriousPlayer) = 0;
+
 	virtual Bool isLocalAlliedVictory() = 0;								///< convenience function
 	virtual Bool isLocalAlliedDefeat() = 0;									///< convenience function
 	virtual Bool isLocalDefeat() = 0;												///< convenience function

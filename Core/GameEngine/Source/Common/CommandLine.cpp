@@ -627,6 +627,23 @@ Int parseWorldScaleLog(char *args[], int num)
 	return 1;
 }
 
+// TheSuperHackers @feature mohamed 15/11/2026 Global conquest mode, see GameLogic/ConquestManager.h.
+Int parseNoConquest(char *args[], int num)
+{
+	TheWritableGlobalData->m_conquestDisabled = TRUE;
+	return 1;
+}
+
+Int parseConquestPercent(char *args[], int num)
+{
+	if (num > 1)
+	{
+		TheWritableGlobalData->m_conquestVictoryPercent = atoi(args[1]);
+		return 2;
+	}
+	return 1;
+}
+
 // World units of camera height per mouse-wheel notch. Note this is applied BEFORE the INI
 // load scales it by the camera multiplier, so the value given here is a pre-scale figure
 // (retail baseline is 10); pass -cameraZoom 1 alongside it to set an absolute step.
@@ -1386,6 +1403,8 @@ static CommandLineParam paramsForEngineInit[] =
 	{ "-cameraZoom", parseCameraZoom },
 	{ "-unitScale", parseUnitScale },
 	{ "-zoomSpeed", parseZoomSpeed },
+	{ "-noConquest", parseNoConquest },
+	{ "-conquestPercent", parseConquestPercent },
 	{ "-fullVersion", parseFullVersion },
 	{ "-particleEdit", parseParticleEdit },
 	{ "-scriptDebug", parseScriptDebug },

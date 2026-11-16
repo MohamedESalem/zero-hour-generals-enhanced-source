@@ -708,6 +708,8 @@ protected:
 	void updateFloatingText();						///< Update function to move our floating text
 	void drawFloatingText();							///< Draw all our floating text
 	void clearFloatingText();							///< clear the floating text list
+	void drawConquestOverlay();						///< Conquest mode: territory names and the territory count
+	void clearConquestOverlay();					///< free the strings of the conquest overlay
 
 	void clearWorldAnimations();					///< delete all world animations
 	void updateAndDrawWorldAnimations();	///< update and draw visible world animations
@@ -938,6 +940,12 @@ protected:
 
 	//Floating Text Data
 	FloatingTextList						m_floatingTextList;				///< Our list of floating text
+
+	// TheSuperHackers @feature mohamed 15/11/2026 Conquest mode overlay (GameLogic/ConquestManager.h)
+	std::vector<DisplayString *>	m_conquestLabels;				///< one name per territory, made on first use
+	DisplayString *							m_conquestStatus;					///< "Countries 12 / 48"
+	Int													m_conquestStatusHeld;			///< numbers currently in m_conquestStatus
+	Int													m_conquestStatusNeeded;
 	UnsignedInt									m_floatingTextTimeOut;									///< Ini value of our floating text timeout
 	Real												m_floatingTextMoveUpSpeed;							///< INI value of our Move up speed
 	Real												m_floatingTextMoveVanishRate;					///< INI value of our move vanish rate

@@ -3102,6 +3102,28 @@ void PartitionManager::shroudMapForPlayer( Int playerIndex )
 }
 
 //-----------------------------------------------------------------------------
+void PartitionManager::adjustLookersForCells( const std::vector<Int> &cellIndices, Int playerIndex, Bool add )
+{
+	if( playerIndex < 0 || playerIndex >= MAX_PLAYER_COUNT )
+		return;
+
+	// By adding a looker directly I don't hit the Ally logic of the normal look/doShroudReveal.
+	// These lookers are counted like any other, so the looks of units in the same cells (and
+	// their queued undos) are unaffected by adding or removing one.
+	for( std::vector<Int>::const_iterator it = cellIndices.begin(); it != cellIndices.end(); ++it )
+	{
+		const Int index = *it;
+		if( index < 0 || index >= m_totalCellCount )
+			continue;
+
+		if( add )
+			m_cells[index].addLooker( playerIndex );
+		else
+			m_cells[index].removeLooker( playerIndex );
+	}
+}
+
+//-----------------------------------------------------------------------------
 void PartitionManager::refreshShroudForLocalPlayer()
 {
 	// This is a drawing refresh only, and so is allowed to use the Local Player.
