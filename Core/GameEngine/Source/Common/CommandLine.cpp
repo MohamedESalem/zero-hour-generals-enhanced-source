@@ -553,9 +553,10 @@ Int parseXRes(char *args[], int num)
 
 // TheSuperHackers @feature mohamed 10/08/2026 Runtime knobs for ultra-large maps, so the
 // "how far out / how small" values can be tuned by eye in seconds instead of a full rebuild
-// per attempt. Both are registered in paramsForEngineInit because the camera multiplier has
-// to be in place before GameData.ini is parsed (GlobalData::parseGameDataDefinition applies
-// it to the INI-provided MaxCameraHeight).
+// per attempt. -cameraZoom has to be in place before GameData.ini is parsed
+// (GlobalData::parseGameDataDefinition applies it to the INI-provided MaxCameraHeight), so both
+// camera flags are registered in paramsForStartup. TheSuperHackers @bugfix mohamed 17/11/2026 They
+// used to be in paramsForEngineInit, which is parsed AFTER GameData.ini: -cameraZoom did nothing.
 Int parseCameraZoom(char *args[], int num)
 {
 	if (num > 1)
@@ -644,9 +645,8 @@ Int parseConquestPercent(char *args[], int num)
 	return 1;
 }
 
-// World units of camera height per mouse-wheel notch. Note this is applied BEFORE the INI
-// load scales it by the camera multiplier, so the value given here is a pre-scale figure
-// (retail baseline is 10); pass -cameraZoom 1 alongside it to set an absolute step.
+// World units of camera height per mouse-wheel notch at close range (retail 10, default 40). Above
+// CameraZoomProportionalHeight (GameData.ini) a notch grows in proportion to the camera height.
 Int parseZoomSpeed(char *args[], int num)
 {
 	if (num > 1)
@@ -654,6 +654,25 @@ Int parseZoomSpeed(char *args[], int num)
 		TheWritableGlobalData->m_cameraZoomSpeed = (Real)atof(args[1]);
 		return 2;
 	}
+	return 1;
+}
+
+// TheSuperHackers @feature mohamed 17/11/2026 Camera height a map starts at (and "default zoom" returns
+// to); without it the start is the zoom ceiling, which is the whole world once the ceiling is raised.
+Int parseCameraStart(char *args[], int num)
+{
+	if (num > 1)
+	{
+		TheWritableGlobalData->m_cameraStartHeight = (Real)atof(args[1]);
+		return 2;
+	}
+	return 1;
+}
+
+// TheSuperHackers @feature mohamed 17/11/2026 No borders / city names over the tactical view.
+Int parseNoWorldOverlay(char *args[], int num)
+{
+	TheWritableGlobalData->m_worldOverlayDisabled = TRUE;
 	return 1;
 }
 
@@ -1388,6 +1407,12 @@ static CommandLineParam paramsForStartup[] =
 	{ "-speedScale", parseSpeedScale },
 	{ "-rangeScale", parseRangeScale },
 	{ "-worldScaleLog", parseWorldScaleLog },
+
+	// TheSuperHackers @bugfix mohamed 17/11/2026 Parsed here, before GameData.ini, because the INI load
+	// multiplies MaxCameraHeight by -cameraZoom's value (see GlobalData::parseGameDataDefinition).
+	{ "-cameraZoom", parseCameraZoom },
+	{ "-zoomSpeed", parseZoomSpeed },
+	{ "-cameraStart", parseCameraStart },
 };
 
 // These Params are parsed during Engine Init before INI data is loaded
@@ -1400,9 +1425,8 @@ static CommandLineParam paramsForEngineInit[] =
 	{ "-noFog", parseNoFog },
 	{ "-maxZoom", parseMaxZoom },
 	{ "-yres", parseYRes },
-	{ "-cameraZoom", parseCameraZoom },
 	{ "-unitScale", parseUnitScale },
-	{ "-zoomSpeed", parseZoomSpeed },
+	{ "-noWorldOverlay", parseNoWorldOverlay },
 	{ "-noConquest", parseNoConquest },
 	{ "-conquestPercent", parseConquestPercent },
 	{ "-fullVersion", parseFullVersion },

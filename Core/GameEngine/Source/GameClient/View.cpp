@@ -148,7 +148,14 @@ View *View::prependViewToList( View *list )
 
 void View::zoom( Real height )
 {
-	setHeightAboveGround(getHeightAboveGround() + height);
+	// TheSuperHackers @feature mohamed 17/11/2026 Above CameraZoomProportionalHeight the step grows with the
+	// height, so a world-scale zoom range is crossed in a few notches (each one is ~10% of the height at the
+	// default wheel speed) while close-up zooming keeps its fine steps.
+	const Real current = getHeightAboveGround();
+	const Real proportional = TheGlobalData ? TheGlobalData->m_cameraZoomProportionalHeight : 0.0f;
+	if( proportional > 0.0f && current > proportional )
+		height *= current / proportional;
+	setHeightAboveGround(current + height);
 }
 
 /**

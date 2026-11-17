@@ -451,6 +451,27 @@ void RTS3DScene::Visibility_Check(CameraClass * camera)
 	else
 	{
 
+		// TheSuperHackers @feature mohamed 17/11/2026 With the camera high above a world map almost every unit,
+		// building and tree is a speck far smaller than a pixel. Drawing thousands of them is the main cost of a
+		// zoomed-out frame and shows nothing, so below `minPixels` on screen they are skipped. Off at battle
+		// height (the camera has to be above CameraTopDownStartHeight / 2); only the main pass is affected, never
+		// what the game logic or the selection code sees.
+		Real smallObjectScale = 0.0f;	// radius * scale / distance = size in pixels
+		Vector3 cameraPos(0, 0, 0);
+		{
+			const Real cullAbove = TheGlobalData->m_cameraTopDownStartHeight * 0.5f;
+			if (cullAbove > 0.0f && TheTacticalView && TheTacticalView->getHeightAboveGround() > cullAbove)
+			{
+				const Real vfov = camera->Get_Vertical_FOV();
+				if (vfov > 0.01f && vfov < 3.0f)
+				{
+					smallObjectScale = (Real)TheTacticalView->getHeight() / (2.0f * tanf(vfov * 0.5f));
+					cameraPos = camera->Get_Position();
+				}
+			}
+		}
+		const Real minPixels = 2.0f;
+
 		// Loop over all top-level RenderObjects in this scene. If the bounding sphere is not in front
 		// of all the frustum planes, it is invisible.
 		for (it.First(); !it.Is_Done(); it.Next()) {
@@ -464,6 +485,18 @@ void RTS3DScene::Visibility_Check(CameraClass * camera)
 			} else {
 
 				bool isVisible=!camera->Cull_Sphere(robj->Get_Bounding_Sphere());
+
+				if (isVisible && smallObjectScale > 0.0f)
+				{
+					const SphereClass &sphere = robj->Get_Bounding_Sphere();
+					const Vector3 toCamera = sphere.Center - cameraPos;
+					const Real distance = toCamera.Length();
+					if (sphere.Radius * smallObjectScale < minPixels * distance)
+					{
+						robj->Set_Visible(false);
+						continue;
+					}
+				}
 
 				if (isVisible)
 				{

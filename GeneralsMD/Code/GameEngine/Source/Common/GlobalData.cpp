@@ -194,6 +194,12 @@ GlobalData* GlobalData::m_theOriginal = nullptr;
 	{ "MaxCameraHeightMultiplier",	INI::parseReal,				nullptr,			offsetof( GlobalData, m_maxCameraHeightMultiplier ) },
 	{ "UnitVisualScale",						INI::parseReal,				nullptr,			offsetof( GlobalData, m_unitVisualScale ) },
 	{ "CameraZoomSpeed",						INI::parseReal,				nullptr,			offsetof( GlobalData, m_cameraZoomSpeed ) },
+	{ "CameraStartHeight",					INI::parseReal,				nullptr,			offsetof( GlobalData, m_cameraStartHeight ) },
+	{ "CameraTopDownStartHeight",		INI::parseReal,				nullptr,			offsetof( GlobalData, m_cameraTopDownStartHeight ) },
+	{ "CameraTopDownEndHeight",			INI::parseReal,				nullptr,			offsetof( GlobalData, m_cameraTopDownEndHeight ) },
+	{ "CameraZoomProportionalHeight",	INI::parseReal,			nullptr,			offsetof( GlobalData, m_cameraZoomProportionalHeight ) },
+	{ "WorldOverlayFadeStartHeight",	INI::parseReal,				nullptr,			offsetof( GlobalData, m_worldOverlayFadeStartHeight ) },
+	{ "WorldOverlayFadeEndHeight",	INI::parseReal,				nullptr,			offsetof( GlobalData, m_worldOverlayFadeEndHeight ) },
 	{ "TerrainHeightAtEdgeOfMap",					INI::parseReal,				nullptr,			offsetof( GlobalData, m_terrainHeightAtEdgeOfMap ) },
 	{ "UnitDamagedThreshold",				INI::parseReal,				nullptr,			offsetof( GlobalData, m_unitDamagedThresh ) },
 	{ "UnitReallyDamagedThreshold",	INI::parseReal,				nullptr,			offsetof( GlobalData, m_unitReallyDamagedThresh ) },
@@ -929,7 +935,14 @@ GlobalData::GlobalData()
 	m_worldScaleLog = FALSE;
 	m_conquestDisabled = FALSE;
 	m_conquestVictoryPercent = 0;	// 0 = the percentage stored in the map
-	m_cameraZoomSpeed = 10.0f;	// retail View::ZoomHeightPerSecond
+	m_cameraZoomSpeed = 40.0f;	// retail View::ZoomHeightPerSecond is 10; 40 is the old default after the x4 ceiling
+	m_cameraStartHeight = 0.0f;
+	m_cameraTopDownStartHeight = 2400.0f;
+	m_cameraTopDownEndHeight = 12000.0f;
+	m_cameraZoomProportionalHeight = 600.0f;
+	m_worldOverlayDisabled = FALSE;
+	m_worldOverlayFadeStartHeight = 500.0f;
+	m_worldOverlayFadeEndHeight = 1100.0f;
 	m_terrainHeightAtEdgeOfMap = 0.0f;
 
 	m_unitDamagedThresh = 0.5f;
@@ -1282,10 +1295,9 @@ void GlobalData::parseGameDataDefinition( INI* ini )
 	if( TheWritableGlobalData->m_maxCameraHeightMultiplier > 0.0f )
 	{
 		TheWritableGlobalData->m_maxCameraHeight *= TheWritableGlobalData->m_maxCameraHeightMultiplier;
-		// Scale the per-notch zoom step by the same factor, so the number of mouse-wheel
-		// notches needed to cross the whole zoom range stays roughly what it was at retail
-		// settings. Without this a 4x zoom ceiling means 4x the spinning to get anywhere.
-		TheWritableGlobalData->m_cameraZoomSpeed *= TheWritableGlobalData->m_maxCameraHeightMultiplier;
+		// TheSuperHackers @tweak mohamed 17/11/2026 The wheel step is no longer scaled with the ceiling: above
+		// m_cameraZoomProportionalHeight it grows with the camera height instead (View::zoom), which crosses
+		// any ceiling in a handful of notches without making the close-up zoom coarse.
 	}
 
 

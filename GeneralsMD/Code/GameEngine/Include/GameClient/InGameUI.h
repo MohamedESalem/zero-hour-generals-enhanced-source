@@ -56,6 +56,7 @@ class SpecialPowerTemplate;
 class WindowLayout;
 class Anim2DTemplate;
 class Anim2D;
+class WorldOverlay;
 class Shadow;
 enum LegalBuildCode CPP_11(: Int);
 enum KindOfType CPP_11(: Int);
@@ -710,6 +711,8 @@ protected:
 	void clearFloatingText();							///< clear the floating text list
 	void drawConquestOverlay();						///< Conquest mode: territory names and the territory count
 	void clearConquestOverlay();					///< free the strings of the conquest overlay
+	void drawWorldOverlay();						///< World maps: border lines and city names (GameClient/WorldOverlay.h)
+	void clearWorldOverlay();						///< forget the overlay data and free its strings
 
 	void clearWorldAnimations();					///< delete all world animations
 	void updateAndDrawWorldAnimations();	///< update and draw visible world animations
@@ -946,6 +949,8 @@ protected:
 	DisplayString *							m_conquestStatus;					///< "Countries 12 / 48"
 	Int													m_conquestStatusHeld;			///< numbers currently in m_conquestStatus
 	Int													m_conquestStatusNeeded;
+	// TheSuperHackers @feature mohamed 17/11/2026 Border lines and city names of a world map
+	WorldOverlay *							m_worldOverlay;					///< made on first use
 	UnsignedInt									m_floatingTextTimeOut;									///< Ini value of our floating text timeout
 	Real												m_floatingTextMoveUpSpeed;							///< INI value of our Move up speed
 	Real												m_floatingTextMoveVanishRate;					///< INI value of our move vanish rate
