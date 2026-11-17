@@ -5573,7 +5573,7 @@ void InGameUI::drawConquestOverlay()
 
 		m_conquestStatus = TheDisplayStringManager->newDisplayString();
 		m_conquestStatus->reset();
-		m_conquestStatus->setFont( font );
+		m_conquestStatus->setFont( TheFontLibrary->getFont( m_drawableCaptionFont, TheGlobalLanguageData->adjustFontSize( 13 ), TRUE ) );
 	}
 
 	const Color neutralColor = GameMakeColor( 255, 255, 255, 255 );

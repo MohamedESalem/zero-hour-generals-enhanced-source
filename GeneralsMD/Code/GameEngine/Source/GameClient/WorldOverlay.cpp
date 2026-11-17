@@ -450,7 +450,7 @@ void WorldOverlay::drawLabels( const AsciiString &fontName, Real height )
 	if( m_font == nullptr || m_fontName != fontName )
 	{
 		clearLabelStrings();
-		m_font = TheFontLibrary->getFont( fontName, TheGlobalLanguageData->adjustFontSize( 10 ), FALSE );
+		m_font = TheFontLibrary->getFont( fontName, TheGlobalLanguageData->adjustFontSize( 8 ), FALSE );
 		m_fontName = fontName;
 	}
 
