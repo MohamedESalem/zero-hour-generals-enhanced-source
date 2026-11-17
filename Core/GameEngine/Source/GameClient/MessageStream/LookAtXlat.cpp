@@ -535,7 +535,18 @@ GameMessageDisposition LookAtTranslator::translateGameMessage(const GameMessage 
 				}
 
 				TheInGameUI->setScrollAmount(offset);
-				TheTacticalView->userScrollBy( &offset );
+
+				// TheSuperHackers @feature mohamed 17/11/2026 Scroll faster the higher the camera is (same
+				// proportional rule as View::zoom), or crossing a world-scale map at height takes forever.
+				Coord2D scrolled = offset;
+				const Real proportional = TheGlobalData->m_cameraZoomProportionalHeight;
+				const Real height = TheTacticalView->getHeightAboveGround();
+				if( proportional > 0.0f && height > proportional )
+				{
+					scrolled.x *= height / proportional;
+					scrolled.y *= height / proportional;
+				}
+				TheTacticalView->userScrollBy( &scrolled );
 			}
 			else
 			{

@@ -70,6 +70,7 @@
 #include "GameClient/TerrainVisual.h"
 #include "GameClient/Display.h"
 #include "GameClient/WindowLayout.h"
+#include "GameClient/WorldOverlay.h"
 #include "GameClient/LookAtXlat.h"
 #include "GameClient/SelectionXlat.h"
 #include "GameClient/Shadow.h"
@@ -1270,6 +1271,7 @@ InGameUI::InGameUI()
 	m_conquestStatus = nullptr;
 	m_conquestStatusHeld = -1;
 	m_conquestStatusNeeded = -1;
+	m_worldOverlay = nullptr;
 
 }
 
@@ -1278,6 +1280,7 @@ InGameUI::InGameUI()
 InGameUI::~InGameUI()
 {
 	clearConquestOverlay();
+	clearWorldOverlay();
 
 	delete TheControlBar;
 	TheControlBar = nullptr;
@@ -1839,6 +1842,9 @@ void InGameUI::preDraw()
 	// draw the floating text first;
 	drawFloatingText();
 
+	// world maps: borders and city names, under the territory names
+	drawWorldOverlay();
+
 	// conquest mode: territory names and the territory count
 	drawConquestOverlay();
 
@@ -2227,6 +2233,7 @@ void InGameUI::reset()
 
 	clearFloatingText();
 	clearConquestOverlay();
+	clearWorldOverlay();
 	clearWorldAnimations();
 	resetIdleWorker();
 	// clear hint lists
@@ -5598,6 +5605,27 @@ void InGameUI::drawConquestOverlay()
 	Int width, height;
 	m_conquestStatus->getSize( &width, &height );
 	m_conquestStatus->draw( ( TheDisplay->getWidth() - width ) / 2, 6, viewer->getPlayerColor(), dropColor );
+}
+
+//-------------------------------------------------------------------------------------------------
+/** TheSuperHackers @feature mohamed 17/11/2026 Borders and city names of a world map. */
+//-------------------------------------------------------------------------------------------------
+void InGameUI::drawWorldOverlay()
+{
+	if( TheGlobalData->m_worldOverlayDisabled )
+		return;
+
+	if( m_worldOverlay == nullptr )
+		m_worldOverlay = NEW WorldOverlay;
+
+	m_worldOverlay->draw( m_drawableCaptionFont );
+}
+
+//-------------------------------------------------------------------------------------------------
+void InGameUI::clearWorldOverlay()
+{
+	delete m_worldOverlay;
+	m_worldOverlay = nullptr;
 }
 
 //-------------------------------------------------------------------------------------------------

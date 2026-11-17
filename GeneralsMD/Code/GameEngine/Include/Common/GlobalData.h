@@ -207,6 +207,23 @@ public:
 	// INI loads, so raising the zoom ceiling doesn't leave you spinning the wheel ~150 times
 	// to cross the range.
 	Real m_cameraZoomSpeed;
+	// TheSuperHackers @feature mohamed 17/11/2026 World-scale camera (zooming out over a whole planet).
+	//   m_cameraStartHeight           : zoom height a map starts at / "default zoom" returns to; 0 = the zoom ceiling
+	//   m_cameraTopDownStartHeight    : above this camera height the pitch starts to blend toward looking straight
+	//   m_cameraTopDownEndHeight        down, reaching it at this height (0 = the pitch never changes)
+	//   m_cameraZoomProportionalHeight: above this height a wheel notch / scroll step grows with the height, so
+	//                                    crossing 20,000 units takes as many notches as crossing 600 (0 = off)
+	// All are INI keys (CameraStartHeight, ...) and, for the first, a command line flag (-cameraStart).
+	Real m_cameraStartHeight;
+	Real m_cameraTopDownStartHeight;
+	Real m_cameraTopDownEndHeight;
+	Real m_cameraZoomProportionalHeight;
+	// TheSuperHackers @feature mohamed 17/11/2026 Borders and city names drawn over the tactical view from the
+	// map's WorldOverlay chunk (GameClient/WorldOverlay.h). -noWorldOverlay turns it off. The borders fade in
+	// between the two camera heights (invisible below the first, fully visible above the second).
+	Bool m_worldOverlayDisabled;
+	Real m_worldOverlayFadeStartHeight;
+	Real m_worldOverlayFadeEndHeight;
 	// Uniform visual scale applied to every drawable's model. This is a CLIENT-SIDE render
 	// transform only (Drawable::m_instanceScale); collision geometry, weapon ranges and
 	// pathfinding all come from the template's Geometry and are untouched, so this cannot

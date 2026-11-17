@@ -271,8 +271,23 @@ void W3DView::buildCameraPosition( Vector3& sourcePos, Vector3& targetPos )
 {
 	const Real zoom = getZoom();
 	const Real angle = getAngle();
-	const Real pitch = getPitch();
+	Real pitch = getPitch();
 	Coord3D pos = getPosition();
+
+	// TheSuperHackers @feature mohamed 17/11/2026 Tilt toward a top-down view as the camera rises above
+	// CameraTopDownStartHeight: seen from tens of thousands of units a world map is best looked at straight
+	// down (and needs far less terrain and far plane that way). The pitch is rotated about the look-at point,
+	// so the camera keeps its distance from it.
+	{
+		const Real tdStart = TheGlobalData->m_cameraTopDownStartHeight;
+		const Real tdEnd = TheGlobalData->m_cameraTopDownEndHeight;
+		const Real topDown = DEG_TO_RADF(88.0f);
+		if (tdStart > 0.0f && tdEnd > tdStart && pitch < topDown)
+		{
+			const Real t = clamp(0.0f, (getCameraOffsetZ() * zoom - tdStart) / (tdEnd - tdStart), 1.0f);
+			pitch += (topDown - pitch) * (t * t * (3.0f - 2.0f * t));
+		}
+	}
 
 	// add in the camera shake, if any
 	pos.x += m_shakeOffset.x;
@@ -697,14 +712,21 @@ Real W3DView::getDesiredHeight(Real x, Real y) const
 //-------------------------------------------------------------------------------------------------
 Real W3DView::getMaxHeight(Real x, Real y) const
 {
+	// TheSuperHackers @feature mohamed 17/11/2026 This is the "default maximum" view (a map's start camera,
+	// scripted camera moves to full zoom). On a world map the zoom ceiling is the whole planet, so
+	// CameraStartHeight (-cameraStart) stands in for it when given.
+	Real maxHeight = m_maxHeightAboveGround;
+	if (TheGlobalData->m_cameraStartHeight > 0.0f && TheGlobalData->m_cameraStartHeight < maxHeight)
+		maxHeight = std::max(TheGlobalData->m_cameraStartHeight, m_minHeightAboveGround);
+
 #if PRESERVE_RETAIL_SCRIPTED_CAMERA
 	if (!m_isUserControlled)
 	{
-		return getHeightAroundPos(x, y) + m_maxHeightAboveGround;
+		return getHeightAroundPos(x, y) + maxHeight;
 	}
 #endif
 
-	return m_pos.z + m_maxHeightAboveGround;
+	return m_pos.z + maxHeight;
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -821,7 +843,12 @@ void W3DView::updateCameraClipPlanes(const Matrix3D &transform)
 		}
 	}
 
-	m_3DCamera->Set_Clip_Planes(NearZ, farZ);
+	// TheSuperHackers @feature mohamed 17/11/2026 The near plane moves out with the camera height: a 10 unit
+	// near plane at 30,000 units leaves no depth precision at all. Never below the retail value.
+	const Real nearZ = std::max(NearZ, m_currentHeightAboveGround * 0.01f);
+	farZ = std::max(farZ, nearZ * 8.0f);
+
+	m_3DCamera->Set_Clip_Planes(nearZ, farZ);
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -2275,8 +2302,12 @@ void W3DView::setZoom(Real z)
 void W3DView::setZoomToDefault()
 {
 	// default zoom has to be max, otherwise players will just zoom to max always
+	// TheSuperHackers @feature mohamed 17/11/2026 ... except on a map whose zoom ceiling is the whole world:
+	// CameraStartHeight (or -cameraStart) is where it starts instead.
 	m_heightAboveGround = m_maxHeightAboveGround;
-	m_zoom = getMaxZoom(m_pos.x, m_pos.y);
+	if (TheGlobalData->m_cameraStartHeight > 0.0f && TheGlobalData->m_cameraStartHeight < m_maxHeightAboveGround)
+		m_heightAboveGround = std::max(TheGlobalData->m_cameraStartHeight, m_minHeightAboveGround);
+	m_zoom = getDesiredZoom(m_pos.x, m_pos.y);
 
 	stopDoingScriptedCamera();
 	m_CameraArrivedAtWaypointOnPathFlag = false;

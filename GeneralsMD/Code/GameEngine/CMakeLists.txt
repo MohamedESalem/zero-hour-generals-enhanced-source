@@ -192,6 +192,7 @@ set(GAMEENGINE_SRC
     Include/GameClient/InGameUI.h
 #    Include/GameClient/Keyboard.h
     Include/GameClient/KeyDefs.h
+    Include/GameClient/WorldOverlay.h
 #    Include/GameClient/LanguageFilter.h
 #    Include/GameClient/Line2D.h
 #    Include/GameClient/LoadScreen.h
@@ -790,6 +791,7 @@ set(GAMEENGINE_SRC
 #    Source/GameClient/GUI/WindowVideoManager.cpp
 #    Source/GameClient/GUI/WinInstanceData.cpp
     Source/GameClient/InGameUI.cpp
+    Source/GameClient/WorldOverlay.cpp
 #    Source/GameClient/Input/Keyboard.cpp
 #    Source/GameClient/Input/Mouse.cpp
 #    Source/GameClient/LanguageFilter.cpp
