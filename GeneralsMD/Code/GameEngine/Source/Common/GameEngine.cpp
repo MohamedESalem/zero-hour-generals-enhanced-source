@@ -674,6 +674,14 @@ void GameEngine::init()
 
 		TheFramePacer->setFramesPerSecondLimit(TheGlobalData->m_framesPerSecondLimit);
 
+		// TheSuperHackers @feature mohamed 17/11/2026 The render frame rate cap follows the Options screen
+		// ("Unlock FPS", saved as FPSLimit in Options.ini). Unlimited by default; a command line flag
+		// (-noFPSLimit) can still only remove the cap, never add one.
+		{
+			OptionPreferences fpsPrefs;
+			TheWritableGlobalData->m_useFpsLimit = TheGlobalData->m_useFpsLimit && fpsPrefs.getFPSLimitEnabled();
+		}
+
 		TheAudio->setOn(TheGlobalData->m_audioOn && TheGlobalData->m_musicOn, AudioAffect_Music);
 		TheAudio->setOn(TheGlobalData->m_audioOn && TheGlobalData->m_soundsOn, AudioAffect_Sound);
 		TheAudio->setOn(TheGlobalData->m_audioOn && TheGlobalData->m_sounds3DOn, AudioAffect_Sound3D);

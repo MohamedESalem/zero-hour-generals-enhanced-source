@@ -37,6 +37,8 @@
 #include "Common/GameAudio.h"
 #include "Common/GameEngine.h"
 #include "Common/OptionPreferences.h"
+#include "Common/FramePacer.h"
+#include "GameNetwork/NetworkInterface.h"
 #include "Common/GameLOD.h"
 #include "Common/Recorder.h"
 #include "Common/Registry.h"
@@ -400,6 +402,30 @@ static void saveOptions()
 
 
 	//-------------------------------------------------------------------------------------------------
+	// TheSuperHackers @feature mohamed 17/11/2026 "Unlock FPS" now does what it says, at once, and is
+	// remembered (FPSLimit in Options.ini; GameEngine::init applies it at startup). It used to be
+	// "never written out", and the box did nothing the next time the game ran.
+	if( checkUnlockFps )
+	{
+		TheWritableGlobalData->m_useFpsLimit = !GadgetCheckBoxIsChecked( checkUnlockFps );
+		(*pref)["FPSLimit"] = TheGlobalData->m_useFpsLimit ? "yes" : "no";
+
+		// Unlocked while playing: the logic must keep the game speed (see GameLogic::startNewGame).
+		if( TheNetwork == nullptr && TheFramePacer != nullptr )
+		{
+			if( !TheGlobalData->m_useFpsLimit )
+			{
+				TheFramePacer->setLogicTimeScaleFps( TheFramePacer->getFramesPerSecondLimit() );
+				TheFramePacer->enableLogicTimeScale( TRUE );
+			}
+			else
+			{
+				TheFramePacer->enableLogicTimeScale( FALSE );
+			}
+		}
+	}
+
+	//-------------------------------------------------------------------------------------------------
 	// Custom game detail settings.
 	GadgetComboBoxGetSelectedPos( comboBoxDetail, &index );
 	if (index == STATIC_GAME_LOD_CUSTOM)
@@ -442,9 +468,6 @@ static void saveOptions()
 		TheWritableGlobalData->m_useHeatEffects = GadgetCheckBoxIsChecked( checkHeatEffects );
 		(*pref)["HeatEffects"] = TheGlobalData->m_useHeatEffects ? "yes" : "no";
 
-		// Never write this out
-		//TheWritableGlobalData->m_useFpsLimit = !GadgetCheckBoxIsChecked( checkUnlockFps );
-		//(*pref)["FPSLimit"] = TheGlobalData->m_useFpsLimit ? "yes" : "no";
 
 		TheWritableGlobalData->m_enableBehindBuildingMarkers = GadgetCheckBoxIsChecked( checkBuildingOcclusion );
 		(*pref)["BuildingOcclusion"] = TheWritableGlobalData->m_enableBehindBuildingMarkers ? "yes" : "no";

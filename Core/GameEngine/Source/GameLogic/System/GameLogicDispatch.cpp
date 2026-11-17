@@ -32,6 +32,7 @@
 
 #include "Common/CRCDebug.h"
 #include "Common/FramePacer.h"
+#include "Common/OptionPreferences.h"
 #include "Common/GameAudio.h"
 #include "Common/GameEngine.h"
 #include "Common/GlobalData.h"
@@ -884,7 +885,13 @@ bool GameLogic::onNewGame(MAYBE_UNUSED GameMessage *msg)
 			maxFPS = TheGlobalData->m_framesPerSecondLimit;
 		DEBUG_LOG(("Setting max FPS limit to %d FPS", maxFPS));
 		TheFramePacer->setFramesPerSecondLimit(maxFPS);
-		TheWritableGlobalData->m_useFpsLimit = true;
+		// TheSuperHackers @feature mohamed 17/11/2026 This used to force the cap on, so a skirmish always ran
+		// at 30 fps whatever the Options screen said. "Game Speed" is now only the logic rate when unlocked.
+		{
+			OptionPreferences fpsPrefs;
+			TheWritableGlobalData->m_useFpsLimit = fpsPrefs.getFPSLimitEnabled();
+			TheFramePacer->enableLogicTimeScale( FALSE );
+		}
 	}
 
 	// prepare for new game

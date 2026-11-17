@@ -1141,6 +1141,16 @@ void GameLogic::setGameMode( GameMode mode )
 // ------------------------------------------------------------------------------------------------
 void GameLogic::startNewGame( Bool loadingSaveGame )
 {
+	// TheSuperHackers @feature mohamed 17/11/2026 With the render frame rate unlocked the logic keeps the game
+	// speed (the 30 of the INI, or the skirmish "Game Speed") instead of running once per rendered frame.
+	// Network games are paced by the network.
+	if( TheNetwork == nullptr && TheFramePacer != nullptr && !TheGlobalData->m_useFpsLimit &&
+		!TheFramePacer->isLogicTimeScaleEnabled() )
+	{
+		TheFramePacer->setLogicTimeScaleFps( TheFramePacer->getFramesPerSecondLimit() );
+		TheFramePacer->enableLogicTimeScale( TRUE );
+	}
+
 	try
 	{
 		tryStartNewGame(loadingSaveGame);

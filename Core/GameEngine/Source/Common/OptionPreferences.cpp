@@ -666,7 +666,7 @@ Bool OptionPreferences::getFPSLimitEnabled()
 {
 	OptionPreferences::const_iterator it = find("FPSLimit");
 	if (it == end())
-		return TheGlobalData->m_useFpsLimit;
+		return FALSE;		// TheSuperHackers @tweak mohamed 17/11/2026 No frame rate cap until the player asks for one
 
 	if (stricmp(it->second.str(), "yes") == 0) {
 		return TRUE;
