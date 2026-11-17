@@ -432,9 +432,9 @@ void WorldOverlay::drawBorders( Real height )
 	if( !m_countrySegments.empty() )
 	{
 		// glow: two soft wide strokes under a thin bright core
-		drawSegments( m_countrySegments, 9.0f * k, GameMakeColor( 255, 255, 255, (UnsignedByte)( 26.0f * countryFade ) ) );
-		drawSegments( m_countrySegments, 4.5f * k, GameMakeColor( 255, 255, 255, (UnsignedByte)( 60.0f * countryFade ) ) );
-		drawSegments( m_countrySegments, 1.8f * k, GameMakeColor( 255, 255, 255, (UnsignedByte)( 245.0f * countryFade ) ) );
+		drawSegments( m_countrySegments, 8.0f * k, GameMakeColor( 255, 255, 255, (UnsignedByte)( 13.0f * countryFade ) ) );
+		drawSegments( m_countrySegments, 4.0f * k, GameMakeColor( 255, 255, 255, (UnsignedByte)( 32.0f * countryFade ) ) );
+		drawSegments( m_countrySegments, 1.6f * k, GameMakeColor( 255, 255, 255, (UnsignedByte)( 175.0f * countryFade ) ) );
 	}
 
 	TheDisplay->flush();

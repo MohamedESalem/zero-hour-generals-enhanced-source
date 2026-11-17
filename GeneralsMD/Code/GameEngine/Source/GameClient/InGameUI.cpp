@@ -5561,7 +5561,7 @@ void InGameUI::drawConquestOverlay()
 	{
 		clearConquestOverlay();
 
-		GameFont *font = TheFontLibrary->getFont( m_drawableCaptionFont, TheGlobalLanguageData->adjustFontSize( 14 ), TRUE );
+		GameFont *font = TheFontLibrary->getFont( m_drawableCaptionFont, TheGlobalLanguageData->adjustFontSize( 9 ), FALSE );
 		for( Int i = 0; i < count; ++i )
 		{
 			DisplayString *label = TheDisplayStringManager->newDisplayString();
