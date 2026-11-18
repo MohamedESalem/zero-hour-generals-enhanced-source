@@ -33,6 +33,7 @@
 
 #include "Common/BuildAssistant.h"
 #include "Common/GlobalData.h"
+#include "Common/WorldScale.h"
 #include "Common/Player.h"
 #include "Common/ThingTemplate.h"
 #include "Common/GameAudio.h"
@@ -783,8 +784,10 @@ LegalBuildCode BuildAssistant::isLocationClearOfObjects( const Coord3D *worldPos
 
 	if (thePlayer && thePlayer->isSkirmishAIPlayer()) {
 		// Skirmish ai adds a little extra around the edges so it doesn't build itself into a corner.
-		if (myExtraWidth < 3*PATHFIND_CELL_SIZE_F) {
-			myExtraWidth = 3*PATHFIND_CELL_SIZE_F;
+		// TheSuperHackers @fix mohamed 17/11/2026 padding follows -collisionScale
+		const Real aiPad = 3*PATHFIND_CELL_SIZE_F * WorldScale::getCollisionScale();
+		if (myExtraWidth < aiPad) {
+			myExtraWidth = aiPad;
 			myFactoryExitWidth -= myExtraWidth;
 			if (myFactoryExitWidth<0) myFactoryExitWidth = 0;
 		}
@@ -987,18 +990,20 @@ LegalBuildCode BuildAssistant::isLocationLegalToBuild( const Coord3D *worldPos,
 
 	if (build->isKindOf(KINDOF_CANNOT_BUILD_NEAR_SUPPLIES) && TheGlobalData->m_SupplyBuildBorder > 0)
 	{
+		// TheSuperHackers @tweak mohamed 18/11/2026 The border is a distance between footprints, so it shrinks with the collision scale like they do
+		const Real supplyBorder = TheGlobalData->m_SupplyBuildBorder * WorldScale::getCollisionScale();
 		// special case for supply centers: can't build too close to supply sources
 		PartitionFilterAcceptByKindOf f1(MAKE_KINDOF_MASK(KINDOF_SUPPLY_SOURCE), KINDOFMASK_NONE);
 		PartitionFilter *filters[] = { &f1, nullptr };
 
 		// see if there are any reasonably close by
-		Real range = build->getTemplateGeometryInfo().getBoundingCircleRadius() + TheGlobalData->m_SupplyBuildBorder*2;
+		Real range = build->getTemplateGeometryInfo().getBoundingCircleRadius() + supplyBorder*2;
 		Object* tooClose = ThePartitionManager->getClosestObject(worldPos, range, FROM_BOUNDINGSPHERE_2D, filters);
 		if (tooClose != nullptr)
 		{
 			// yep, see if we would collide with an expanded version
 			GeometryInfo tooCloseGeom = tooClose->getGeometryInfo();
-			tooCloseGeom.expandFootprint(TheGlobalData->m_SupplyBuildBorder);
+			tooCloseGeom.expandFootprint(supplyBorder);
 			if (ThePartitionManager->geomCollidesWithGeom(
 						worldPos,
 						build->getTemplateGeometryInfo(),
@@ -1007,7 +1012,7 @@ LegalBuildCode BuildAssistant::isLocationLegalToBuild( const Coord3D *worldPos,
 						tooCloseGeom,
 						tooClose->getOrientation()))
 			{
-				TheTerrainVisual->addFactionBib(tooClose, true, TheGlobalData->m_SupplyBuildBorder);
+				TheTerrainVisual->addFactionBib(tooClose, true, supplyBorder);
 				return LBC_TOO_CLOSE_TO_SUPPLIES;
 			}
 		}

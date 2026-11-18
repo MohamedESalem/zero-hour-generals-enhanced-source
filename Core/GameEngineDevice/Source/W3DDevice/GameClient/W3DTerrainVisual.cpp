@@ -906,7 +906,8 @@ void W3DTerrainVisual::setRawMapHeight(const ICoord2D *gridPos, Int height)
  		if (m_logicHeightMap->getHeight(x,y) > height)
 		{
 			m_logicHeightMap->setRawHeight(x, y, height);
-			m_terrainRenderObject->staticLightingChanged(); // OOH! this could benefit from the new Seismic update code
+			// TheSuperHackers @performance mohamed 17/11/2026 only the cells around the changed height need new vertices
+			m_terrainRenderObject->scheduleRegionUpdate(x-1, y-1, x+1, y+1);
 
 
 #ifdef DO_SEISMIC_SIMULATIONS

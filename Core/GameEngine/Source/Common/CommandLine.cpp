@@ -676,6 +676,22 @@ Int parseNoWorldOverlay(char *args[], int num)
 	return 1;
 }
 
+// TheSuperHackers @feature mohamed 18/11/2026 Camera height below which the city names and province borders are shown.
+Int parseOverlayDetailHeight(char *args[], int num)
+{
+	if (num > 1)
+	{
+		Real h = (Real)atof(args[1]);
+		if (h > 0.0f)
+		{
+			TheWritableGlobalData->m_worldOverlayFadeEndHeight = h;
+			TheWritableGlobalData->m_worldOverlayFadeStartHeight = h * 0.83f;
+		}
+		return 2;
+	}
+	return 1;
+}
+
 Int parseYRes(char *args[], int num)
 {
 	if (num > 1)
@@ -1427,6 +1443,7 @@ static CommandLineParam paramsForEngineInit[] =
 	{ "-yres", parseYRes },
 	{ "-unitScale", parseUnitScale },
 	{ "-noWorldOverlay", parseNoWorldOverlay },
+	{ "-overlayDetailHeight", parseOverlayDetailHeight },
 	{ "-noConquest", parseNoConquest },
 	{ "-conquestPercent", parseConquestPercent },
 	{ "-fullVersion", parseFullVersion },

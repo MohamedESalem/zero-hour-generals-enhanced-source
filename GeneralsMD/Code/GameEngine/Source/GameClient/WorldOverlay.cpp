@@ -41,19 +41,22 @@
 #include "GameLogic/TerrainLogic.h"
 
 //-------------------------------------------------------------------------------------------------
-static const Int OVERLAY_CHUNK_VERSION = 1;
-static const Real OVERLAY_QUANT = 5.0f;				///< world units per stored coordinate step
+static const Int OVERLAY_CHUNK_VERSION = 2;			///< version 1 is still read: it has no step field and always used 5 world units
+static const Real OVERLAY_QUANT_V1 = 5.0f;			///< world units per stored coordinate step of a version 1 chunk
 
-static const Real LOD0_MAX_HEIGHT = 1500.0f;		///< finest border detail below this camera height ...
-static const Real LOD1_MAX_HEIGHT = 7000.0f;		///< ... medium up to this one, coarsest above
-static const Real PROVINCE_FADE_START = 9000.0f;	///< province borders thin out as the whole world comes into view
-static const Real PROVINCE_FADE_END = 15000.0f;
-// City names only show once the camera is down inside a country: none above 2,500 units (a country or two on the
-// screen), so a zoomed-out world shows country names only. The smaller places appear as the camera comes lower.
-static const Real TIER_MAX_HEIGHT[ 4 ] = { 2500.0f, 1800.0f, 1200.0f, 800.0f };	///< label tier t is shown below this camera height
+// TheSuperHackers @tweak mohamed 18/11/2026 The three border detail levels simplify to 0.04 / 0.25 / 0.9 cells (about 0.5 / 3.5 / 12 km),
+// so each is still finer than a pixel at the camera heights it serves.
+static const Real LOD0_MAX_HEIGHT = 600.0f;			///< finest border detail below this camera height ...
+static const Real LOD1_MAX_HEIGHT = 4500.0f;		///< ... medium up to this one, coarsest above
+// TheSuperHackers @tweak mohamed 18/11/2026 One rule for all the detail: the city names and the province borders
+// are shown together, from the ground up to the camera height of "WorldOverlayFadeEndHeight" (a country filling the
+// screen), and go away together above it. The province borders fade out between FadeStart and FadeEnd; the labels
+// are cut at FadeEnd (the first tier) and the smaller places appear as the camera comes lower.
+// Country borders stay at every height, and nothing fades near the ground any more: the lines stay visible in battle.
+static const Real TIER_SCALE[ 4 ] = { 1.0f, 0.72f, 0.48f, 0.32f };	///< label tier t is shown below this share of FadeEnd
 
-static const Int MAX_COUNTRY_SEGMENTS = 9000;		///< per frame; 2D draws are flushed in blocks, so this is a time budget
-static const Int MAX_PROVINCE_SEGMENTS = 12000;
+static const Int MAX_COUNTRY_SEGMENTS = 20000;		///< per frame; 2D draws are flushed in blocks, so this is a time budget
+static const Int MAX_PROVINCE_SEGMENTS = 60000;		///< (real borders are detailed: a screen of Europe is tens of thousands of segments)
 static const Int MAX_QUADS_PER_FLUSH = 7000;		///< Render2D indices are 16 bit: stay well below 65,535 / 6
 static const Int MAX_LABELS_PER_FRAME = 160;
 static const Int LABEL_STRING_LIFETIME = 240;		///< frames a label may go unused before its string is freed
@@ -76,6 +79,7 @@ WorldOverlay::WorldOverlay()
 	m_mapMinX = m_mapMinY = m_mapMaxX = m_mapMaxY = 0.0f;
 	m_quadsSinceFlush = 0;
 	m_frame = 0;
+	m_quant = OVERLAY_QUANT_V1;
 	m_font = nullptr;
 }
 
@@ -123,7 +127,7 @@ Bool WorldOverlay::parseChunk( DataChunkInput &file, DataChunkInfo *info, void *
 {
 	WorldOverlay *self = (WorldOverlay *)userData;
 
-	if( info->version != OVERLAY_CHUNK_VERSION )
+	if( info->version != OVERLAY_CHUNK_VERSION && info->version != 1 )
 	{
 		DEBUG_LOG(( "WorldOverlay: chunk version %d is not supported, the overlay is off", info->version ));
 		return TRUE;
@@ -139,7 +143,14 @@ Bool WorldOverlay::parseChunk( DataChunkInput &file, DataChunkInfo *info, void *
 	for( Int iTol = 0; iTol < lodCount; ++iTol )
 		file.readReal();								// tolerances: informational
 
-	const Real shift = 2.0f * (Real)border;
+	// TheSuperHackers @tweak mohamed 18/11/2026 Version 2 stores the world units per coordinate step (0.5 for the
+	// world map, so borders keep the data's own detail); version 1 always used 5.
+	const Real quant = ( info->version >= 2 ) ? file.readReal() : OVERLAY_QUANT_V1;
+	if( quant <= 0.0f )
+		return TRUE;
+	self->m_quant = quant;
+
+	const Real shift = 10.0f * (Real)border / quant;		// stored steps in the border ring
 	self->m_border = border;
 	self->m_mapMinX = 0.0f;
 	self->m_mapMinY = 0.0f;
@@ -176,8 +187,8 @@ Bool WorldOverlay::parseChunk( DataChunkInput &file, DataChunkInfo *info, void *
 			for( Int p = 0; p < counts[ lod ]; ++p )
 			{
 				Coord3D point;
-				point.x = ( (Real)raw[ p * 2 ] - shift ) * OVERLAY_QUANT;
-				point.y = ( (Real)raw[ p * 2 + 1 ] - shift ) * OVERLAY_QUANT;
+				point.x = ( (Real)raw[ p * 2 ] - shift ) * quant;
+				point.y = ( (Real)raw[ p * 2 + 1 ] - shift ) * quant;
 				point.z = 0.0f;
 				self->m_points.push_back( point );
 				if( lod == 0 )
@@ -207,8 +218,8 @@ Bool WorldOverlay::parseChunk( DataChunkInput &file, DataChunkInfo *info, void *
 		file.readArrayOfBytes( (char *)record, 8 );
 		const Int qx = record[ 0 ] | ( record[ 1 ] << 8 );
 		const Int qy = record[ 2 ] | ( record[ 3 ] << 8 );
-		label.pos.x = ( (Real)qx - shift ) * OVERLAY_QUANT;
-		label.pos.y = ( (Real)qy - shift ) * OVERLAY_QUANT;
+		label.pos.x = ( (Real)qx - shift ) * quant;
+		label.pos.y = ( (Real)qy - shift ) * quant;
 		label.pos.z = 0.0f;
 		label.tier = record[ 4 ] > 3 ? 3 : record[ 4 ];
 		label.flags = record[ 5 ];
@@ -329,7 +340,8 @@ static Bool clipSegment( Real &x1, Real &y1, Real &x2, Real &y2, Real left, Real
 }
 
 //-------------------------------------------------------------------------------------------------
-void WorldOverlay::gatherSegments( const Line &line, Int lod, Int viewX1, Int viewY1, Int viewX2, Int viewY2 )
+void WorldOverlay::gatherSegments( const Line &line, Int lod, Int viewX1, Int viewY1, Int viewX2, Int viewY2,
+								   Real minX, Real minY, Real maxX, Real maxY )
 {
 	std::vector<Segment> &out = line.level ? m_countrySegments : m_provinceSegments;
 	const Int limit = line.level ? MAX_COUNTRY_SEGMENTS : MAX_PROVINCE_SEGMENTS;
@@ -341,10 +353,26 @@ void WorldOverlay::gatherSegments( const Line &line, Int lod, Int viewX1, Int vi
 	const Coord3D *points = &m_points[ line.first[ lod ] ];
 	const Int count = (Int)line.count[ lod ];
 
+	// A border chain can be long while only a few of its points are on screen: a point is projected only when it
+	// or one of its neighbours lies in the visible ground rectangle (a cheap compare), so the cost follows the screen.
 	ICoord2D previous = { 0, 0 };
 	Bool havePrevious = FALSE;
+	Bool prevIn = FALSE;
+	Bool curIn = points[ 0 ].x >= minX && points[ 0 ].x <= maxX && points[ 0 ].y >= minY && points[ 0 ].y <= maxY;
 	for( Int i = 0; i < count; ++i )
 	{
+		Bool nextIn = FALSE;
+		if( i + 1 < count )
+			nextIn = points[ i + 1 ].x >= minX && points[ i + 1 ].x <= maxX && points[ i + 1 ].y >= minY && points[ i + 1 ].y <= maxY;
+		const Bool nearView = prevIn || curIn || nextIn;
+		prevIn = curIn;
+		curIn = nextIn;
+		if( !nearView )
+		{
+			havePrevious = FALSE;
+			continue;
+		}
+
 		ICoord2D screen;
 		if( TheTacticalView->worldToScreenTriReturn( &points[ i ], &screen ) == View::WTS_INVALID )
 		{
@@ -391,12 +419,8 @@ void WorldOverlay::drawSegments( const std::vector<Segment> &segments, Real widt
 //-------------------------------------------------------------------------------------------------
 void WorldOverlay::drawBorders( Real height )
 {
-	const Real fadeStart = TheGlobalData->m_worldOverlayFadeStartHeight;
-	const Real fadeEnd = TheGlobalData->m_worldOverlayFadeEndHeight;
-	const Real countryFade = smoothStep( fadeStart, fadeEnd, height );
-	if( countryFade < 0.01f )
-		return;
-	const Real provinceFade = countryFade * ( 1.0f - smoothStep( PROVINCE_FADE_START, PROVINCE_FADE_END, height ) );
+	const Real countryFade = 1.0f;
+	const Real provinceFade = 1.0f - smoothStep( TheGlobalData->m_worldOverlayFadeStartHeight, TheGlobalData->m_worldOverlayFadeEndHeight, height );
 
 	Real minX, minY, maxX, maxY;
 	if( !visibleGroundRect( &minX, &minY, &maxX, &maxY ) )
@@ -420,7 +444,7 @@ void WorldOverlay::drawBorders( Real height )
 			continue;
 		if( it->maxX < minX || it->minX > maxX || it->maxY < minY || it->minY > maxY )
 			continue;
-		gatherSegments( *it, lod, originX - 16, originY - 16, originX + viewW + 16, originY + viewH + 16 );
+		gatherSegments( *it, lod, originX - 16, originY - 16, originX + viewW + 16, originY + viewH + 16, minX, minY, maxX, maxY );
 	}
 
 	// thicker on a big screen, so the line looks the same at 4K as at 1080p
@@ -468,11 +492,12 @@ void WorldOverlay::drawLabels( const AsciiString &fontName, Real height )
 	++m_frame;
 	m_labelRects.clear();
 	Int shown = 0;
+	const Real maxLabelHeight = TheGlobalData->m_worldOverlayFadeEndHeight;
 
 	// `m_labels` is sorted best first, so a label that would overlap one already placed is the lesser one
 	for( std::vector<Label>::iterator it = m_labels.begin(); it != m_labels.end() && shown < MAX_LABELS_PER_FRAME; ++it )
 	{
-		if( height > TIER_MAX_HEIGHT[ it->tier ] )
+		if( height > maxLabelHeight * TIER_SCALE[ it->tier ] )
 			continue;
 
 		ICoord2D screen;

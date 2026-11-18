@@ -36,6 +36,7 @@
 #include "Common/FramePacer.h"
 #include "Common/Radar.h"
 #include "Common/WorldScale.h"
+#include "Common/HitchLog.h"
 #include "Common/PlayerTemplate.h"
 #include "Common/Team.h"
 #include "Common/PlayerList.h"
@@ -905,21 +906,23 @@ DECLARE_PERF_TIMER(GameEngine_update)
 void GameEngine::update()
 {
 	USE_PERF_TIMER(GameEngine_update)
+	const double hitchUpdateStart = HitchLog::now();
 	{
 		{
 			// VERIFY CRC needs to be in this code block.  Please to not pull TheGameLogic->update() inside this block.
 			VERIFY_CRC
 
-			TheRadar->UPDATE();
+			{ HitchLog::Scope hitch("Radar"); TheRadar->UPDATE(); }
 
 			/// @todo Move audio init, update, etc, into GameClient update
 
-			TheAudio->UPDATE();
-			TheGameClient->UPDATE();
-			TheMessageStream->propagateMessages();
+			{ HitchLog::Scope hitch("Audio"); TheAudio->UPDATE(); }
+			{ HitchLog::Scope hitch("GameClient::UPDATE"); TheGameClient->UPDATE(); }
+			{ HitchLog::Scope hitch("MessageStream"); TheMessageStream->propagateMessages(); }
 
 			if (TheNetwork != nullptr)
 			{
+				HitchLog::Scope hitch("Network");
 				TheNetwork->UPDATE();
 			}
 		}
@@ -927,14 +930,18 @@ void GameEngine::update()
 		// TheSuperHackers @info Ignores frozen time because the script engine needs updating in the logic update regardless.
 		if (canUpdateGameLogic(FramePacer::IgnoreFrozenTime))
 		{
-			TheGameLogic->UPDATE();
+			{ HitchLog::Scope hitch("GameLogic::UPDATE"); TheGameLogic->UPDATE(); }
 
 			if (!TheFramePacer->isTimeFrozen())
 			{
+				HitchLog::Scope hitch("GameClient::step");
 				TheGameClient->step();
 			}
 		}
 	}
+
+	// TheSuperHackers @feature mohamed 17/11/2026 Hitch.log: which part of this update took the time (see HitchLog.h).
+	HitchLog::endUpdate(TheGameLogic ? TheGameLogic->getFrame() : 0, HitchLog::now() - hitchUpdateStart);
 }
 
 // Horrible reference, but we really, really need to know if we are windowed.

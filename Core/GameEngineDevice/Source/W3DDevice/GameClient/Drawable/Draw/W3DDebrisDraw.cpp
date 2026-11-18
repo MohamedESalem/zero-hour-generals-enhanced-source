@@ -48,6 +48,17 @@
 #include "W3DDevice/GameClient/W3DScene.h"
 #include "W3DDevice/GameClient/W3DShadow.h"
 
+// TheSuperHackers @fix mohamed 17/11/2026 -unitScale used to be applied twice: once baked into the mesh by
+// Create_Render_Obj (via Drawable::getScale) and again on the draw transform, so models ended up at
+// unitScale^2 while collision geometry was only scaled once. The global visual shrink is a transform-only
+// scale now, so strip it from the scale used to bake the mesh (the template Scale keeps its retail meaning).
+static inline Real meshBakeScale( Real fullScale )
+{
+	if( TheGlobalData && TheGlobalData->m_unitVisualScale > 0.0f && TheGlobalData->m_unitVisualScale != 1.0f )
+		return fullScale / TheGlobalData->m_unitVisualScale;
+	return fullScale;
+}
+
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
 W3DDebrisDraw::W3DDebrisDraw(Thing *thing, const ModuleData* moduleData) : DrawModule(thing, moduleData)
@@ -108,7 +119,7 @@ void W3DDebrisDraw::setModelName(AsciiString name, Color color, ShadowType t)
 		Int hexColor = 0;
 		if (color != 0)
 			hexColor = color | 0xFF000000;
-		m_renderObject = W3DDisplay::m_assetManager->Create_Render_Obj(name.str(), getDrawable()->getScale(), hexColor);
+		m_renderObject = W3DDisplay::m_assetManager->Create_Render_Obj(name.str(), meshBakeScale(getDrawable()->getScale()), hexColor);
 		DEBUG_ASSERTCRASH(m_renderObject, ("Debris model %s not found!",name.str()));
 		if (m_renderObject)
 		{

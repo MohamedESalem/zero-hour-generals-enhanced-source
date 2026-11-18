@@ -75,6 +75,7 @@
 #include "W3DDevice/GameClient/W3DTreeBuffer.h"
 #include "W3DDevice/GameClient/W3DPropBuffer.h"
 #include "W3DDevice/GameClient/W3DRoadBuffer.h"
+#include "Common/HitchLog.h"
 #include "W3DDevice/GameClient/W3DBridgeBuffer.h"
 #include "W3DDevice/GameClient/W3DWaypointBuffer.h"
 #include "W3DDevice/GameClient/WorldHeightMap.h"
@@ -969,6 +970,7 @@ The vertex coordinates and texture coordinates, as well as static lighting are u
 */
 Int HeightMapRenderObjClass::updateBlock(Int x0, Int y0, Int x1, Int y1,  WorldHeightMap *pMap, RefRenderObjListIterator *pLightsIterator)
 {
+	HitchLog::Scope hitchScope("terrain updateBlock");
 #ifdef RTS_DEBUG
 	DEBUG_ASSERTCRASH(x0>=0,  ("HeightMapRenderObjClass::UpdateBlock parameters extend beyond left edge."));
 	DEBUG_ASSERTCRASH(y0>=0,  ("HeightMapRenderObjClass::UpdateBlock parameters extend beyond bottom edge."));
@@ -1543,6 +1545,42 @@ void HeightMapRenderObjClass::staticLightingChanged()
 	BaseHeightMapRenderObjClass::staticLightingChanged();
 }
 
+//=============================================================================
+// HeightMapRenderObjClass::scheduleRegionUpdate
+//=============================================================================
+/** The ground changed inside a small rectangle (a building flattened it). With the whole map drawn at once,
+a full update rebuilds every vertex of the map (millions on a world-size map) for a change a few cells wide, so
+only remember the rectangle and let updateCenter rebuild just that. A windowed terrain keeps the full refresh. */
+//=============================================================================
+void HeightMapRenderObjClass::scheduleRegionUpdate(Int x0, Int y0, Int x1, Int y1)
+{
+	if (m_needFullUpdate || m_map == nullptr || m_x < m_map->getXExtent() || m_y < m_map->getYExtent())
+	{
+		BaseHeightMapRenderObjClass::staticLightingChanged();
+		return;
+	}
+
+	if (!m_haveDirtyRegion)
+	{
+		m_dirtyX0 = x0;
+		m_dirtyY0 = y0;
+		m_dirtyX1 = x1;
+		m_dirtyY1 = y1;
+		m_haveDirtyRegion = true;
+	}
+	else
+	{
+		if (x0 < m_dirtyX0) m_dirtyX0 = x0;
+		if (y0 < m_dirtyY0) m_dirtyY0 = y0;
+		if (x1 > m_dirtyX1) m_dirtyX1 = x1;
+		if (y1 > m_dirtyY1) m_dirtyY1 = y1;
+	}
+	m_regionRelightPending = true;
+	if (TheTacticalView)
+		TheTacticalView->onHeightMapChanged();
+}
+
+
 #define CENTER_LIMIT 2
 #define BIG_JUMP 16
 #define WIDE_STEP 32
@@ -1655,8 +1693,36 @@ void HeightMapRenderObjClass::updateCenter(CameraClass *camera, const Vector3 *c
 		if (m_needFullUpdate)
 		{
 			m_needFullUpdate = false;
+			m_haveDirtyRegion = false;
+			m_regionRelightPending = false;
 			updateBlock(0, 0, m_x-1, m_y-1, m_map, pLightsIterator);
 		}
+		else if (m_haveDirtyRegion)
+		{
+			// grow by two cells: the normals and lighting of the neighbours depend on the changed heights
+			Int rx0 = m_dirtyX0 - 2;
+			Int ry0 = m_dirtyY0 - 2;
+			Int rx1 = m_dirtyX1 + 2;
+			Int ry1 = m_dirtyY1 + 2;
+			if (rx0 < 0) rx0 = 0;
+			if (ry0 < 0) ry0 = 0;
+			if (rx1 > m_x-1) rx1 = m_x-1;
+			if (ry1 > m_y-1) ry1 = m_y-1;
+			m_haveDirtyRegion = false;
+			if (m_regionRelightPending)
+			{
+				m_regionRelightPending = false;
+				// what staticLightingChanged() does besides the terrain: scorches and roads are relit once, not once per cell
+				m_scorchesInBuffer = 0;
+				m_curNumScorchVertices = 0;
+				m_curNumScorchIndices = 0;
+				if (m_roadBuffer)
+					m_roadBuffer->updateLighting();
+			}
+			if (rx0 < rx1 && ry0 < ry1)
+				updateBlock(rx0, ry0, rx1, ry1, m_map, pLightsIterator);
+		}
+
 
 		m_updating = false;
 		return; // no need to center.

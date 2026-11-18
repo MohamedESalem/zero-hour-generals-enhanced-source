@@ -31,6 +31,7 @@
 
 
 #include "Common/DataChunk.h"
+#include "Common/HitchLog.h"
 #include "Common/GameState.h"
 #include "Common/MapObject.h"
 #include "Common/Radar.h"
@@ -2618,6 +2619,7 @@ void TerrainLogic::setActiveBoundary(Int newActiveBoundary)
 // ------------------------------------------------------------------------------------------------
 void TerrainLogic::flattenTerrain(Object *obj)
 {
+	HitchLog::Scope hitchScope("flattenTerrain");
 	if (obj->getGeometryInfo().getIsSmall()) {
 		return;
 	}
@@ -2659,6 +2661,7 @@ void TerrainLogic::flattenTerrain(Object *obj)
 			if (maxY<bottomRight.Y) maxY = bottomRight.Y;
 			if (maxY<bottomLeft.Y) maxY = bottomLeft.Y;
 
+			// TheSuperHackers @performance mohamed 17/11/2026 the loops below start at iMin.y, not at row 0: rows above the footprint can never be inside it.
 			ICoord2D iMin, iMax;
 			iMin.x = REAL_TO_INT_FLOOR(minX/MAP_XY_FACTOR);
 			iMin.y = REAL_TO_INT_FLOOR(minY/MAP_XY_FACTOR);
@@ -2673,7 +2676,7 @@ void TerrainLogic::flattenTerrain(Object *obj)
 			Real totalHeight = 0;
 			Int numSamples = 0;
 			for (i=iMin.x; i<=iMax.x; i++) {
-				for (j=iMin.y; j<=iMax.y; ++j) {
+				for (j=(iMin.y>0?iMin.y:0); j<=iMax.y; ++j) {
 					Vector3	testPt(i*MAP_XY_FACTOR, j*MAP_XY_FACTOR, 0);
 					Bool match = false;
 					unsigned char flags;
@@ -2699,7 +2702,7 @@ void TerrainLogic::flattenTerrain(Object *obj)
 			if (rawDataHeight>centerHeight) rawDataHeight = centerHeight;
 
 			for (i=iMin.x; i<=iMax.x; i++) {
-				for (j=iMin.y; j<=iMax.y; ++j) {
+				for (j=(iMin.y>0?iMin.y:0); j<=iMax.y; ++j) {
 					Vector3	testPt(i*MAP_XY_FACTOR, j*MAP_XY_FACTOR, 0);
 					Bool match = false;
 					unsigned char flags;
@@ -2768,7 +2771,7 @@ void TerrainLogic::flattenTerrain(Object *obj)
 			Real totalHeight = 0;
 			Int numSamples = 0;
 			for (i=iMin.x; i<=iMax.x; i++) {
-				for (j=iMin.y; j<=iMax.y; ++j) {
+				for (j=(iMin.y>0?iMin.y:0); j<=iMax.y; ++j) {
 					Vector3	testPt(i*MAP_XY_FACTOR, j*MAP_XY_FACTOR, 0);
 					Bool match = false;
 					Real dx = testPt.X - pos->x;
@@ -2786,7 +2789,7 @@ void TerrainLogic::flattenTerrain(Object *obj)
 			Real avgHeight = totalHeight/numSamples;
 			Int rawDataHeight = REAL_TO_INT_FLOOR(0.5f + avgHeight/MAP_HEIGHT_SCALE);
 			for (i=iMin.x; i<=iMax.x; i++) {
-				for (j=iMin.y; j<=iMax.y; ++j) {
+				for (j=(iMin.y>0?iMin.y:0); j<=iMax.y; ++j) {
 					Vector3	testPt(i*MAP_XY_FACTOR, j*MAP_XY_FACTOR, 0);
 					Bool match = false;
 					Real dx = testPt.X - pos->x;

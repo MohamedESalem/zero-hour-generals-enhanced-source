@@ -80,6 +80,25 @@ static inline Bool isValidTimeToCalcLogicStuff()
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
 
+
+// TheSuperHackers @fix mohamed 17/11/2026 -unitScale used to be applied twice: once baked into the mesh by
+// Create_Render_Obj (via Drawable::getScale) and again on the draw transform, so models ended up at
+// unitScale^2 while collision geometry was only scaled once. The global visual shrink is a transform-only
+// scale now, so strip it from the scale used to bake the mesh (the template Scale keeps its retail meaning).
+static inline Real meshBakeScale( Real fullScale )
+{
+	if( TheGlobalData && TheGlobalData->m_unitVisualScale > 0.0f && TheGlobalData->m_unitVisualScale != 1.0f )
+		return fullScale / TheGlobalData->m_unitVisualScale;
+	return fullScale;
+}
+
+// Ground shadows and decals are sized in world units in the INI and ignore -unitScale, so a shrunken model
+// kept a full-size blob under it. Follow the visual scale.
+static inline Real unitShadowScale()
+{
+	return ( TheGlobalData && TheGlobalData->m_unitVisualScale > 0.0f ) ? TheGlobalData->m_unitVisualScale : 1.0f;
+}
+
 #if defined(DEBUG_CRC) && defined(RTS_DEBUG)
 #include <cstdarg>
 class LogClass
@@ -620,7 +639,7 @@ void ModelConditionInfo::validateCachedBones(RenderObjClass* robj, Real scale) c
 			return;
 		}
 
-		robj = W3DDisplay::m_assetManager->Create_Render_Obj(m_modelName.str(), scale, 0);
+		robj = W3DDisplay::m_assetManager->Create_Render_Obj(m_modelName.str(), meshBakeScale(scale), 0);
 		DEBUG_ASSERTCRASH(robj, ("*** ASSET ERROR: Model %s not found!",m_modelName.str()));
 		if (!robj)
 		{
@@ -1866,10 +1885,10 @@ void W3DModelDraw::allocateShadows()
 		shadowInfo.allowUpdates			= FALSE;		//shadow image will never update
 		shadowInfo.allowWorldAlign	= TRUE;	//shadow image will wrap around world objects
 		shadowInfo.m_type						= (ShadowType)tmplate->getShadowType();
-		shadowInfo.m_sizeX					= tmplate->getShadowSizeX();
-		shadowInfo.m_sizeY					= tmplate->getShadowSizeY();
-		shadowInfo.m_offsetX				= tmplate->getShadowOffsetX();
-		shadowInfo.m_offsetY				= tmplate->getShadowOffsetY();
+		shadowInfo.m_sizeX					= tmplate->getShadowSizeX() * unitShadowScale();
+		shadowInfo.m_sizeY					= tmplate->getShadowSizeY() * unitShadowScale();
+		shadowInfo.m_offsetX				= tmplate->getShadowOffsetX() * unitShadowScale();
+		shadowInfo.m_offsetY				= tmplate->getShadowOffsetY() * unitShadowScale();
   		m_shadow = TheW3DShadowManager->addShadow(m_renderObject, &shadowInfo);
 		if (m_shadow)
 		{	m_shadow->enableShadowInvisible(m_fullyObscuredByShroud);
@@ -2746,10 +2765,10 @@ void W3DModelDraw::setTerrainDecal(TerrainDecalType type)
 		strlcpy(decalInfo.m_ShadowName, tmplate->getShadowTextureName().str(), ARRAY_SIZE(decalInfo.m_ShadowName));
 	else
 		strlcpy(decalInfo.m_ShadowName, TerrainDecalTextureName[type], ARRAY_SIZE(decalInfo.m_ShadowName));
-	decalInfo.m_sizeX = tmplate->getShadowSizeX();
-	decalInfo.m_sizeY = tmplate->getShadowSizeY();
-	decalInfo.m_offsetX = tmplate->getShadowOffsetX();
-	decalInfo.m_offsetY = tmplate->getShadowOffsetY();
+	decalInfo.m_sizeX = tmplate->getShadowSizeX() * unitShadowScale();
+	decalInfo.m_sizeY = tmplate->getShadowSizeY() * unitShadowScale();
+	decalInfo.m_offsetX = tmplate->getShadowOffsetX() * unitShadowScale();
+	decalInfo.m_offsetY = tmplate->getShadowOffsetY() * unitShadowScale();
 	if (TheProjectedShadowManager)
 		m_terrainDecal = TheProjectedShadowManager->addDecal(m_renderObject,&decalInfo);
 	if (m_terrainDecal)
@@ -3025,7 +3044,7 @@ void W3DModelDraw::setModelState(const ModelConditionInfo* newState)
 		}
 		else
 		{
-			m_renderObject = W3DDisplay::m_assetManager->Create_Render_Obj(newState->m_modelName.str(), draw->getScale(), m_hexColor);
+			m_renderObject = W3DDisplay::m_assetManager->Create_Render_Obj(newState->m_modelName.str(), meshBakeScale(draw->getScale()), m_hexColor);
 			DEBUG_ASSERTCRASH(m_renderObject, ("*** ASSET ERROR: Model %s not found!",newState->m_modelName.str()));
 		}
 
@@ -3066,10 +3085,10 @@ void W3DModelDraw::setModelState(const ModelConditionInfo* newState)
 			shadowInfo.allowUpdates			= FALSE;		//shadow image will never update
 			shadowInfo.allowWorldAlign	= TRUE;	//shadow image will wrap around world objects
 			shadowInfo.m_type						= (ShadowType)tmplate->getShadowType();
-			shadowInfo.m_sizeX					= tmplate->getShadowSizeX();
-			shadowInfo.m_sizeY					= tmplate->getShadowSizeY();
-			shadowInfo.m_offsetX				= tmplate->getShadowOffsetX();
-			shadowInfo.m_offsetY				= tmplate->getShadowOffsetY();
+			shadowInfo.m_sizeX					= tmplate->getShadowSizeX() * unitShadowScale();
+			shadowInfo.m_sizeY					= tmplate->getShadowSizeY() * unitShadowScale();
+			shadowInfo.m_offsetX				= tmplate->getShadowOffsetX() * unitShadowScale();
+			shadowInfo.m_offsetY				= tmplate->getShadowOffsetY() * unitShadowScale();
 
 			DEBUG_ASSERTCRASH(m_shadow == nullptr, ("m_shadow is not null"));
 			m_shadow = TheW3DShadowManager->addShadow(m_renderObject, &shadowInfo, draw);

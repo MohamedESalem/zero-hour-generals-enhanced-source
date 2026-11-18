@@ -67,6 +67,7 @@
 #include "WW3D2/render2dsentence.h"
 #include "Common/PerfTimer.h"
 #include "Common/GlobalData.h"
+#include "Common/HitchLog.h"
 #include "Common/GameCommon.h"
 
 
@@ -719,6 +720,7 @@ RenderObjClass * W3DAssetManager::Create_Render_Obj(
 	const char *newTexture
 )
 {
+	HitchLog::Scope hitchScope("Create_Render_Obj");
 	#ifdef DUMP_PERF_STATS
 	__int64 startTime64,endTime64;
 	GetPrecisionTimer(&startTime64);
