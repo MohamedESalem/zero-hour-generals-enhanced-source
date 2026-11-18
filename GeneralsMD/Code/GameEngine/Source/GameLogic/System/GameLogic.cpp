@@ -84,6 +84,7 @@
 #include "GameLogic/AIPathfind.h"
 #include "GameLogic/CaveSystem.h"
 #include "GameLogic/ConquestManager.h"
+#include "GameLogic/WorldWrapManager.h"
 #include "GameLogic/CrateSystem.h"
 #include "GameLogic/FPUControl.h"
 #include "GameLogic/GameLogic.h"
@@ -360,6 +361,9 @@ GameLogic::~GameLogic()
 	delete TheConquestManager;
 	TheConquestManager = nullptr;
 
+	delete TheWorldWrapManager;
+	TheWorldWrapManager = nullptr;
+
 	// Null out TheGameLogic
 	TheGameLogic = nullptr;
 }
@@ -397,6 +401,9 @@ void GameLogic::init()
 
 	// TheSuperHackers @feature mohamed 15/11/2026 Global conquest mode; idle unless the map has territories.
 	TheConquestManager = NEW ConquestManager;
+
+	// TheSuperHackers @feature mohamed 18/11/2026 Ships and aircraft cross the 180th meridian; idle unless the map has the table.
+	TheWorldWrapManager = NEW WorldWrapManager;
 
 	// create a team for the player
 	//DEBUG_ASSERTCRASH(ThePlayerList, ("null ThePlayerList"));
@@ -443,6 +450,7 @@ void GameLogic::reset()
 	TheAI->reset();
 	TheScriptEngine->reset();
 	TheConquestManager->reset();
+	TheWorldWrapManager->reset();
 
 	m_CRC = 0;
 	for(Int i = 0; i < MAX_SLOTS; ++i)
@@ -2041,6 +2049,7 @@ void GameLogic::tryStartNewGame( Bool loadingSaveGame )
 	// TheSuperHackers @feature mohamed 15/11/2026 Read the map's territories, if it has any. The map
 	// objects (the capitals' hospitals) exist by now and the partition cells are laid out.
 	TheConquestManager->newMap( loadingSaveGame );
+	TheWorldWrapManager->newMap( loadingSaveGame );
 
 	// place initial network buildings/units
 	if (TheGameInfo && !loadingSaveGame)
@@ -3818,6 +3827,7 @@ void GameLogic::update()
 
 	// Conquest mode: who holds which territory. Before the CRC, since it moves shroud lookers.
 	TheConquestManager->update();
+	TheWorldWrapManager->update();
 
 	// force CRC calculation, so we can keep a cache of the last N CRCs.  We do this right where the recorder
 	// would be getting the CRC anyway, so replays can get the CRCs from the exact instant in time as the original.

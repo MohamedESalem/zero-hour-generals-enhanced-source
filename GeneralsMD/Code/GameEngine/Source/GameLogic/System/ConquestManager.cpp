@@ -22,6 +22,10 @@
 
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
 
+#include <stdarg.h>
+#include <stdio.h>
+#include <stdlib.h>
+
 #include "Common/DataChunk.h"
 #include "Common/GlobalData.h"
 #include "Common/MapObject.h"
@@ -38,6 +42,8 @@
 
 #include "GameLogic/ConquestManager.h"
 #include "GameLogic/GameLogic.h"
+#include "GameLogic/AI.h"
+#include "GameLogic/Module/AIUpdate.h"
 #include "GameLogic/Module/BodyModule.h"
 #include "GameLogic/Object.h"
 #include "GameLogic/PartitionManager.h"
@@ -56,6 +62,29 @@ ConquestManager *TheConquestManager = nullptr;
 static const Int CONQUEST_CHUNK_VERSION = 1;
 static const Int CONQUEST_CHECK_INTERVAL = 5;		///< logic frames between two looks at the hospitals
 static const Int CELL_TERRITORY_SLOTS = 4;			///< territories one partition cell can belong to
+
+//-------------------------------------------------------------------------------------------------
+/** With GENZH_WORLD_LOG set, the defenders and the hand-overs of armies are noted in WorldLog.txt in the
+	* game folder (4000 lines at most). Changes nothing in the game. */
+//-------------------------------------------------------------------------------------------------
+static void conquestLog( const char *format, ... )
+{
+	static Int lines = 0;
+	if( getenv( "GENZH_WORLD_LOG" ) == nullptr || lines >= 4000 )
+		return;
+
+	FILE *file = fopen( "WorldLog.txt", "a" );
+	if( file == nullptr )
+		return;
+
+	++lines;
+	va_list args;
+	va_start( args, format );
+	vfprintf( file, format, args );
+	va_end( args );
+	fputc( '\n', file );
+	fclose( file );
+}
 
 //-------------------------------------------------------------------------------------------------
 static Bool areAllies( const Player *p1, const Player *p2 )
@@ -78,6 +107,93 @@ static Bool isContender( const Player *player )
 		return FALSE;
 
 	return playerTemplate != ThePlayerTemplateStore->findPlayerTemplate( NAMEKEY( "FactionCivilian" ) );
+}
+
+//-------------------------------------------------------------------------------------------------
+static const char *DEFENDER_SIDE_NAME = "PlyrDefenders";
+
+//-------------------------------------------------------------------------------------------------
+Bool ConquestManager::isDefenderPlayer( const Player *player )
+{
+	return player != nullptr && player->getPlayerNameKey() == NAMEKEY( DEFENDER_SIDE_NAME );
+}
+
+//-------------------------------------------------------------------------------------------------
+Player *ConquestManager::findDefenders() const
+{
+	return ThePlayerList->findPlayerWithNameKey( NAMEKEY( DEFENDER_SIDE_NAME ) );
+}
+
+//-------------------------------------------------------------------------------------------------
+/** The defender side is an enemy of every player (and every player of it), and every defending unit
+	* guards the ground it was placed on, so an army only reacts to what comes into its country. */
+//-------------------------------------------------------------------------------------------------
+void ConquestManager::startDefenders()
+{
+	Player *defenders = findDefenders();
+	if( defenders == nullptr )
+		return;
+
+	for( Int i = 0; i < ThePlayerList->getPlayerCount(); ++i )
+	{
+		Player *other = ThePlayerList->getNthPlayer( i );
+		if( other == nullptr || other == defenders || !isContender( other ) )
+			continue;
+
+		defenders->setPlayerRelationship( other, ENEMIES );
+		other->setPlayerRelationship( defenders, ENEMIES );
+	}
+
+	Int guards = 0;
+	for( Object *obj = TheGameLogic->getFirstObject(); obj != nullptr; obj = obj->getNextObject() )
+	{
+		if( obj->getControllingPlayer() != defenders )
+			continue;
+
+		AIUpdateInterface *ai = obj->getAIUpdateInterface();
+		if( ai == nullptr || !obj->isMobile() )
+			continue;
+
+		ai->aiGuardPosition( obj->getPosition(), GUARDMODE_NORMAL, CMD_FROM_AI );
+		++guards;
+	}
+
+	DEBUG_LOG(( "ConquestManager: defender side is hostile to all players, %d units on guard", guards ));
+	conquestLog( "frame %u: defender side %s: hostile to every player, %d units on guard", TheGameLogic->getFrame(), DEFENDER_SIDE_NAME, guards );
+}
+
+//-------------------------------------------------------------------------------------------------
+/** Hand the army and the capital tech a country still has to the player who holds its hospital. What
+	* has been destroyed or captured on its own is left alone: only the defenders' objects change owner. */
+//-------------------------------------------------------------------------------------------------
+void ConquestManager::giveForcesTo( const Territory &territory, Player *player )
+{
+	Player *defenders = findDefenders();
+	if( defenders == nullptr || player == nullptr || player == defenders )
+		return;
+
+	AsciiString armyPrefix, artillery, pad;
+	armyPrefix.format( "Army_%s_", territory.key.str() );
+	artillery.format( "CapArty_%s", territory.key.str() );
+	pad.format( "CapPad_%s", territory.key.str() );
+
+	Int given = 0;
+	for( Object *obj = TheGameLogic->getFirstObject(); obj != nullptr; obj = obj->getNextObject() )
+	{
+		if( obj->getControllingPlayer() != defenders )
+			continue;
+
+		const AsciiString &name = obj->getName();
+		if( name.isEmpty() || !( name.startsWith( armyPrefix ) || name == artillery || name == pad ) )
+			continue;
+
+		obj->setTeam( player->getDefaultTeam() );
+		++given;
+	}
+
+	if( given > 0 )
+		DEBUG_LOG(( "ConquestManager: %d objects of %s go to %ls", given, territory.key.str(), player->getPlayerDisplayName().str() ));
+	conquestLog( "frame %u: %d objects of %s go to %ls", TheGameLogic->getFrame(), given, territory.key.str(), player->getPlayerDisplayName().str() );
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -194,6 +310,7 @@ void ConquestManager::newMap( Bool loadingSaveGame )
 	buildCells();
 
 	DEBUG_LOG(( "ConquestManager: %d territories, %d needed for victory", getTerritoryCount(), getVictoryCount() ));
+	conquestLog( "map started: %d territories, %d needed for victory", getTerritoryCount(), getVictoryCount() );
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -408,6 +525,8 @@ void ConquestManager::start()
 			ThePartitionManager->revealMapForPlayer( player->getPlayerIndex() );
 	}
 
+	startDefenders();
+
 	// Everybody starts as the owner of the territory he starts in.
 	if( TheGameInfo )
 	{
@@ -475,6 +594,10 @@ void ConquestManager::checkOwnership( Bool announce )
 		const Int ownerIndex = owner ? owner->getPlayerIndex() : -1;
 		const Bool changed = ownerIndex != it->ownerIndex;
 		it->ownerIndex = ownerIndex;
+
+		if( changed && owner != nullptr )
+			giveForcesTo( *it, owner );		// the army and the capital tech of the country
+
 		applyViewers( *it, viewersFor( owner ) );		// also follows a change of alliances
 
 		if( changed && announce )

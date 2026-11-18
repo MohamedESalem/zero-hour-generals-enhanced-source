@@ -28,6 +28,8 @@
 
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
 
+#include <eh.h>
+
 #include "Common/ActionManager.h"
 #include "Common/AudioAffect.h"
 #include "Common/BuildAssistant.h"
@@ -951,11 +953,72 @@ extern HWND ApplicationHWnd;
 /** -----------------------------------------------------------------------------------------------
  * The "main loop" of the game engine. It will not return until the game exits.
  */
+//-------------------------------------------------------------------------------------------------
+// TheSuperHackers @diagnostic mohamed 18/11/2026 What an access violation was, instead of "Uncaught Exception".
+// The generic catch(...) in GameEngine::execute cannot tell a crash of the code (an access violation) from a thrown
+// object. With this translator the fault becomes a FaultException that carries the address of the faulting
+// instruction and the words on the stack that point into the exe (the call chain, roughly); the crash text then reads
+// "Access violation at exe+0x123456 ... callers exe+0x...". Subtract the exe base to match a linker map
+// (generalszh.map, a build linked with /MAP). Only real faults are translated; breakpoints and the like (the crash
+// handler's own DebugBreak) go the normal way.
+//-------------------------------------------------------------------------------------------------
+enum { FAULT_CALLERS = 20 };
+
+struct FaultException
+{
+	unsigned int code;
+	unsigned int address;
+	unsigned int access;						///< 0 read, 1 write, 8 execute
+	unsigned int target;						///< the address it tried to touch
+	unsigned int callers[ FAULT_CALLERS ];
+	int callerCount;
+};
+
+static void __cdecl faultTranslator( unsigned int code, struct _EXCEPTION_POINTERS *pointers )
+{
+	if( code != 0xC0000005 && code != 0xC0000094 && code != 0xC000001D )
+		return;
+
+	FaultException fault;
+	fault.code = code;
+	fault.address = (unsigned int)pointers->ExceptionRecord->ExceptionAddress;
+	fault.access = pointers->ExceptionRecord->NumberParameters > 0 ? (unsigned int)pointers->ExceptionRecord->ExceptionInformation[ 0 ] : 0;
+	fault.target = pointers->ExceptionRecord->NumberParameters > 1 ? (unsigned int)pointers->ExceptionRecord->ExceptionInformation[ 1 ] : 0;
+	fault.callerCount = 0;
+
+	const unsigned int base = (unsigned int)GetModuleHandle( nullptr );
+	const unsigned int limit = base + 0x700000;
+	const unsigned int *stack = (const unsigned int *)pointers->ContextRecord->Esp;
+	for( int i = 0; i < 2048 && fault.callerCount < FAULT_CALLERS; ++i )
+	{
+		unsigned int word = 0;
+		__try { word = stack[ i ]; }
+		__except( EXCEPTION_EXECUTE_HANDLER ) { break; }
+		if( word >= base + 0x1000 && word < limit )
+			fault.callers[ fault.callerCount++ ] = word;
+	}
+
+	throw fault;
+}
+
+static void describeFault( const FaultException &fault, char *buffer, int size )
+{
+	const unsigned int base = (unsigned int)GetModuleHandle( nullptr );
+	int used = _snprintf( buffer, size, "Fault %08X (%s) at exe+0x%X, address 0x%08X; stack:", fault.code,
+		fault.access == 1 ? "write" : fault.access == 8 ? "execute" : "read", fault.address - base, fault.target );
+	for( int i = 0; i < fault.callerCount && used > 0 && used < size - 14; ++i )
+		used += _snprintf( buffer + used, size - used, " %X", fault.callers[ i ] - base );
+	buffer[ size - 1 ] = 0;
+}
+
+
 void GameEngine::execute()
 {
 #if defined(RTS_DEBUG)
 	DWORD startTime = timeGetTime() / 1000;
 #endif
+
+	_set_se_translator( faultTranslator );
 
 	// pretty basic for now
 	while( !m_quitting )
@@ -1040,6 +1103,12 @@ void GameEngine::execute()
 					char buf[256];
 					_snprintf(buf, sizeof(buf), "Uncaught ErrorCode in GameEngine::update: %s (0x%08X)", name, (unsigned)e);
 					buf[sizeof(buf) - 1] = 0;
+					RELEASE_CRASH((buf));
+				}
+				catch (const FaultException& fault)
+				{
+					char buf[640];
+					describeFault( fault, buf, sizeof(buf) );
 					RELEASE_CRASH((buf));
 				}
 				catch (...)

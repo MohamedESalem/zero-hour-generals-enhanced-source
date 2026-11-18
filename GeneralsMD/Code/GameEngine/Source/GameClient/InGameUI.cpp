@@ -699,8 +699,12 @@ void InGameUI::objectChangedTeam(const Object *obj, Int oldPlayerIndex, Int newP
 			}
 			if (!found)
 			{
+				// TheSuperHackers @bugfix mohamed 18/11/2026 Only what SpecialPowerModule itself would list: a structure whose
+				// power has a public timer. Without this a unit that changes team on frame 0 (the world map hands a country's
+				// army to the player who starts there) put a timer on screen for every special ability it has.
 				if( TheGameLogic->getFrame() == 0 && !obj->getStatusBits().test( OBJECT_STATUS_UNDER_CONSTRUCTION ) &&
-					obj->isKindOf( KINDOF_COMMANDCENTER ) == FALSE )
+					obj->isKindOf( KINDOF_COMMANDCENTER ) == FALSE &&
+					obj->isKindOf( KINDOF_STRUCTURE ) && powerTemplate->hasPublicTimer() )
 					addSuperweapon(newPlayerIndex, powerName, id, powerTemplate);
 			}
 		}

@@ -45,6 +45,7 @@
 #include "GameLogic/AISkirmishPlayer.h"
 #include "GameLogic/SidesList.h"
 #include "GameLogic/AI.h"
+#include "GameLogic/ConquestManager.h"
 #include "GameLogic/AIPathfind.h"
 #include "GameLogic/TerrainLogic.h"
 #include "GameLogic/Module/AIUpdate.h"
@@ -491,6 +492,7 @@ void AISkirmishPlayer::acquireEnemy()
 	Int i;
 	for (i=0; i<ThePlayerList->getPlayerCount(); i++) {
 		Player *curPlayer = ThePlayerList->getNthPlayer(i);
+		if (ConquestManager::isDefenderPlayer(curPlayer)) continue; // the world map's defenders only guard their own country, they are no target for an attack wave
 		if (m_player->getRelationship(curPlayer->getDefaultTeam()) == ENEMIES) {
 			if (curPlayer->hasAnyObjects()==false) continue; // not much of an enemy.
 			// ok, we got an enemy;

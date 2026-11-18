@@ -2902,6 +2902,12 @@ void Drawable::drawEmoticon( const IRegion2D *healthBarRegion )
 // ------------------------------------------------------------------------------------------------
 void Drawable::drawAmmo( const IRegion2D *healthBarRegion )
 {
+	// TheSuperHackers @bugfix mohamed 18/11/2026 drawIconUI passes a null region when the health bar cannot be placed on the
+	// screen (a unit at the edge of the view, which the world map's camera makes common) and this function read
+	// healthBarRegion->lo.x without looking: a crash when such a selected unit has ammo pips.
+	if( healthBarRegion == nullptr )
+		return;
+
 	const Object *obj = getObject();
 
 	if (!(
@@ -2956,6 +2962,10 @@ void Drawable::drawAmmo( const IRegion2D *healthBarRegion )
 // ------------------------------------------------------------------------------------------------
 void Drawable::drawContained( const IRegion2D *healthBarRegion )
 {
+	// TheSuperHackers @bugfix mohamed 18/11/2026 Same null region as in drawAmmo.
+	if( healthBarRegion == nullptr )
+		return;
+
 	const Object *obj = getObject();
 
 	ContainModuleInterface* container = obj->getContain();

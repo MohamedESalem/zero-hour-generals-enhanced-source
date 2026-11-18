@@ -32,6 +32,12 @@
 //
 // Ownership is polled from the hospitals, so every way of changing a building's owner counts. A map
 // without the chunk leaves the manager inactive and every query returns the stock answer.
+//
+// TheSuperHackers @feature mohamed 18/11/2026 National armies. A map made with the "armies" stage has a
+// defender side (PlyrDefenders, a civilian faction, so skirmish games keep it). Its units stand guard in every
+// country and the Tech Artillery Platform and Tech Reinforcement Pad in each capital belong to it. The side is
+// hostile to every player. Whoever takes a country's hospital (or starts in the country) is handed the army
+// and the capital tech of that country: the objects named Army_<key>_<n>, CapArty_<key> and CapPad_<key>.
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
 #pragma once
@@ -80,6 +86,7 @@ public:
 	Int getTerritoryIndexAt( const Coord3D *pos ) const;			///< -1 = open sea or off the map
 	Player *getTerritoryOwner( Int index ) const;							///< null = nobody
 	Bool canPlayerBuildAt( const Player *player, const Coord3D *pos ) const;
+	static Bool isDefenderPlayer( const Player *player );					///< the map's defender side
 	Int getVictoryCount() const;															///< territories an alliance needs to win
 	Int getTerritoryCountForAlliance( const Player *player ) const;	///< held by the player and his allies
 
@@ -94,6 +101,9 @@ private:
 	void applyViewers( Territory &territory, PlayerMaskType newMask );
 	void checkOwnership( Bool announce );
 	void checkVictory();
+	Player *findDefenders() const;
+	void startDefenders();														///< hostile to every player, units on guard
+	void giveForcesTo( const Territory &territory, Player *player );	///< army and capital tech of a country
 
 	Bool											m_active;
 	Bool											m_started;					///< hospitals resolved and start state applied
