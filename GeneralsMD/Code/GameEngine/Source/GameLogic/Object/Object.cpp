@@ -3462,13 +3462,15 @@ Bool Object::isUsingAirborneLocomotor() const
 void Object::getHealthBoxPosition(Coord3D& pos) const
 {
 	pos = *getPosition();
-	pos.z += getGeometryInfo().getMaxHeightAbovePosition() + 10;
+	// TheSuperHackers @fix mohamed 17/11/2026 the clearance above the model follows -unitScale
+	const Real uiScale = ( TheGlobalData && TheGlobalData->m_unitVisualScale > 0.0f ) ? TheGlobalData->m_unitVisualScale : 1.0f;
+	pos.z += getGeometryInfo().getMaxHeightAbovePosition() + 10 * uiScale;
 	pos.add(m_healthBoxOffset);
 
 	// this needs to get moved to the mobspawnerupdate
 	if (isKindOf(KINDOF_MOB_NEXUS)) // quicker idiot test
 	{
-		pos.z += 20;// dear God, I confess my kluge, and repent.
+		pos.z += 20 * uiScale;// dear God, I confess my kluge, and repent.
 	}
 }
 
@@ -3523,9 +3525,12 @@ Bool Object::getHealthBoxDimensions(Real &healthBoxHeight, Real &healthBoxWidth)
 	}
 
 	//just add the major and minor axes
-	Real size = MAX(20.0f, MIN(150.0f, (getGeometryInfo().getMajorRadius() + getGeometryInfo().getMinorRadius())) );
+	// TheSuperHackers @fix mohamed 17/11/2026 the retail minimum sizes (20 / 40) follow -unitScale, otherwise
+	// units on a shrunken world keep a full-size bar.
+	const Real uiScale = ( TheGlobalData && TheGlobalData->m_unitVisualScale > 0.0f ) ? TheGlobalData->m_unitVisualScale : 1.0f;
+	Real size = MAX(20.0f * uiScale, MIN(150.0f, (getGeometryInfo().getMajorRadius() + getGeometryInfo().getMinorRadius())) );
 	healthBoxHeight = 3.0f;
-	healthBoxWidth = MAX(20.0f, size * 2.0f);
+	healthBoxWidth = MAX(20.0f * uiScale, size * 2.0f);
 	return TRUE;
 
 #endif

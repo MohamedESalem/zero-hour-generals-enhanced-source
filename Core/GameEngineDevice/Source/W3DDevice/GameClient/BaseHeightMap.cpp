@@ -241,6 +241,9 @@ BaseHeightMapRenderObjClass::BaseHeightMapRenderObjClass()
 	m_x=0;
 	m_y=0;
 	m_needFullUpdate = false;
+	m_haveDirtyRegion = false;
+	m_regionRelightPending = false;
+	m_dirtyX0 = m_dirtyY0 = m_dirtyX1 = m_dirtyY1 = 0;
 	m_showImpassableAreas = false;
 	m_updating = false;
 	//Set height to the maximum value that can be stored.

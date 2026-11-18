@@ -219,8 +219,8 @@ public:
 	Real m_cameraTopDownEndHeight;
 	Real m_cameraZoomProportionalHeight;
 	// TheSuperHackers @feature mohamed 17/11/2026 Borders and city names drawn over the tactical view from the
-	// map's WorldOverlay chunk (GameClient/WorldOverlay.h). -noWorldOverlay turns it off. The borders fade in
-	// between the two camera heights (invisible below the first, fully visible above the second).
+	// map's WorldOverlay chunk (GameClient/WorldOverlay.h). -noWorldOverlay turns it off. The province borders fade out
+	// between the two camera heights (full below the first, gone above the second) and the city names end at the second.
 	Bool m_worldOverlayDisabled;
 	Real m_worldOverlayFadeStartHeight;
 	Real m_worldOverlayFadeEndHeight;

@@ -32,9 +32,9 @@
 //
 // Everything is drawn in screen space on top of the 3D view, so lines keep the same crisp width at
 // every zoom, like a web map. Country borders are a white line with a soft white glow around it;
-// province borders are a thinner, dimmer line. Both fade away as the camera comes down to battle
-// height (they would only hide the fighting), province borders also fade out again when the whole
-// world is in view. The overlay is purely visual: it reads the map file once and never touches the
+// province borders are a thinner, dimmer line. Country borders stay visible at every camera height; the province borders and the city names are shown
+// together from the ground up to a camera height of about one country (-overlayDetailHeight, WorldOverlayFadeEndHeight)
+// and go away together above it. The overlay is purely visual: it reads the map file once and never touches the
 // game logic, so it cannot affect replays or multiplayer.
 ///////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -108,7 +108,8 @@ private:
 	void load( const AsciiString &mapName );
 	void clearLabelStrings();
 	Bool visibleGroundRect( Real *minX, Real *minY, Real *maxX, Real *maxY ) const;
-	void gatherSegments( const Line &line, Int lod, Int viewX1, Int viewY1, Int viewX2, Int viewY2 );
+	void gatherSegments( const Line &line, Int lod, Int viewX1, Int viewY1, Int viewX2, Int viewY2,
+								Real minX, Real minY, Real maxX, Real maxY );
 	void drawSegments( const std::vector<Segment> &segments, Real width, Color color );
 	void drawBorders( Real height );
 	void drawLabels( const AsciiString &fontName, Real height );
@@ -116,6 +117,7 @@ private:
 	AsciiString					m_mapName;				///< the map the data below belongs to
 	Bool						m_active;				///< the map carries a WorldOverlay chunk
 	Int							m_border;
+	Real						m_quant;				///< world units per stored coordinate step of the loaded chunk
 	Real						m_mapMinX, m_mapMinY, m_mapMaxX, m_mapMaxY;	///< playable area, world units
 	std::vector<Line>			m_lines;
 	std::vector<Coord3D>		m_points;				///< all points of all lines and detail levels

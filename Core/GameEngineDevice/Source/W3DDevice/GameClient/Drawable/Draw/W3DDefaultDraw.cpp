@@ -48,6 +48,17 @@
 #include "W3DDevice/GameClient/W3DScene.h"
 #include "W3DDevice/GameClient/W3DShadow.h"
 
+// TheSuperHackers @fix mohamed 17/11/2026 -unitScale used to be applied twice: once baked into the mesh by
+// Create_Render_Obj (via Drawable::getScale) and again on the draw transform, so models ended up at
+// unitScale^2 while collision geometry was only scaled once. The global visual shrink is a transform-only
+// scale now, so strip it from the scale used to bake the mesh (the template Scale keeps its retail meaning).
+static inline Real meshBakeScale( Real fullScale )
+{
+	if( TheGlobalData && TheGlobalData->m_unitVisualScale > 0.0f && TheGlobalData->m_unitVisualScale != 1.0f )
+		return fullScale / TheGlobalData->m_unitVisualScale;
+	return fullScale;
+}
+
 
 //-------------------------------------------------------------------------------------------------
 //-------------------------------------------------------------------------------------------------
@@ -58,7 +69,7 @@ W3DDefaultDraw::W3DDefaultDraw(Thing *thing, const ModuleData* moduleData) : Dra
 	m_shadow = nullptr;
 	if (!getDrawable()->getTemplate()->getLTAName().isEmpty())
 	{
-		m_renderObject = W3DDisplay::m_assetManager->Create_Render_Obj(getDrawable()->getTemplate()->getLTAName().str(), getDrawable()->getScale(), 0);
+		m_renderObject = W3DDisplay::m_assetManager->Create_Render_Obj(getDrawable()->getTemplate()->getLTAName().str(), meshBakeScale(getDrawable()->getScale()), 0);
 
 		Shadow::ShadowTypeInfo shadowInfo;
 		shadowInfo.m_type=(ShadowType)SHADOW_VOLUME;

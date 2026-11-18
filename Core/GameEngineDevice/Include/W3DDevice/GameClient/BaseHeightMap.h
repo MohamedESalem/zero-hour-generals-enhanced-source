@@ -225,6 +225,11 @@ public:
 
 	Bool doesNeedFullUpdate() {return m_needFullUpdate;}
 
+	/** TheSuperHackers @performance mohamed 17/11/2026 The heights in [x0,x1]x[y0,y1] (heightmap indices, border included)
+	changed, e.g. a building flattened the ground. The default refreshes all lighting; HeightMapRenderObjClass only
+	rebuilds the vertices around the change, which on a huge map is the difference between a hitch and nothing. */
+	virtual void scheduleRegionUpdate(Int x0, Int y0, Int x1, Int y1) { staticLightingChanged(); }
+
 
 	virtual int updateBlock(Int x0, Int y0, Int x1, Int y1, WorldHeightMap *pMap, RefRenderObjListIterator *pLightsIterator) = 0;
 
@@ -270,6 +275,9 @@ protected:
 	Vector3 m_depthFade;	///<depth based fall off values for r,g,b
 	Bool m_disableTextures;
 	Bool m_needFullUpdate; ///< True if lighting changed, and we need to update all instead of what moved.
+	Bool m_haveDirtyRegion;	///< a region (below) of the heightmap changed and needs its vertices rebuilt
+	Bool m_regionRelightPending;	///< roads and scorches have to be relit when the dirty region is rebuilt
+	Int m_dirtyX0, m_dirtyY0, m_dirtyX1, m_dirtyY1;
 	Bool m_doXNextTime; ///< True if we updated y scroll, and need to do x scroll next frame.
 	Real	m_minHeight;	///<minimum value of height samples in heightmap
 	Real	m_maxHeight;	///<maximum value of height samples in heightmap

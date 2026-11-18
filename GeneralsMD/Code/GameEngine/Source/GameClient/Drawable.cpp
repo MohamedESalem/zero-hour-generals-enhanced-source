@@ -323,7 +323,21 @@ void Drawable::saturateRGB(RGBColor& color, Real factor)
 //--- A MACRO TO APPLY TO TheTacticalView->getZoom() ------ To Clamp the return to a visually pleasing size
 //--- so that icons, emoticons, health bars, pips, etc, look reasonably solid and don't shimmer or tweed
 //#define CLAMP_ICON_ZOOM_FACTOR(n) (MAX(0.80f, MIN(1.00f, n)))
-#define CLAMP_ICON_ZOOM_FACTOR(n) (n)//nothing
+// TheSuperHackers @fix mohamed 18/11/2026 getZoom() is the camera height as a share of the MAXIMUM camera height. The retail
+// maximum is about 400, so the share is 0.3 .. 1 and "1 / zoom" gives a sensible 1x .. 3x. A world map raises that maximum
+// (-cameraZoom 100 = 40,000): at a battle height of 1,000 the share is 0.025 and every health bar, pip and rank icon came out
+// 40 times too big (a health bar the width of the screen). With a raised maximum the zoom is expressed against the retail range
+// again (height / 400) and limited to 0.4 .. 4; with the retail maximum nothing changes.
+static Real iconZoomFactor( Real zoom )
+{
+	if( TheGlobalData && TheGlobalData->m_maxCameraHeightMultiplier > 1.001f )
+	{
+		const Real retailZoom = zoom * TheGlobalData->m_maxCameraHeightMultiplier;
+		return retailZoom < 0.4f ? 0.4f : ( retailZoom > 4.0f ? 4.0f : retailZoom );
+	}
+	return zoom;
+}
+#define CLAMP_ICON_ZOOM_FACTOR(n) iconZoomFactor(n)
 
 
 //-------------------------------------------------------------------------------------------------
@@ -2689,11 +2703,13 @@ static Bool computeHealthRegion( const Drawable *draw, IRegion2D& region )
 	// scale the health bars according to the zoom
 	Real zoom = TheTacticalView->getZoom();
 	//Real widthScale = 1.3f / zoom;
-	Real widthScale = 1.0f / zoom;
+	Real widthScale = 1.0f / iconZoomFactor( zoom );
 	//Real heightScale = 0.8f / zoom;
 	Real heightScale = 1.0f;
 
 	healthBoxWidth *= widthScale;
+	if( TheGlobalData && TheGlobalData->m_maxCameraHeightMultiplier > 1.001f && healthBoxWidth < 14.0f )
+		healthBoxWidth = 14.0f;	// a unit of a shrunken world still gets a readable bar
 	healthBoxHeight *= heightScale;
 
 	// do this so health bar doesn't get too skinny or fat after scaling

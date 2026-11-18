@@ -28,6 +28,10 @@
 #include "PreRTS.h"	// This must go first in EVERY cpp file in the GameEngine
 
 #include "GameLogic/AIPathfind.h"
+#include "GameLogic/ZoneMerge.h"
+#include "Common/HitchLog.h"
+#include <stdio.h>
+#include <stdlib.h>
 
 #include "Common/PerfTimer.h"
 #include "Common/Player.h"
@@ -2291,6 +2295,36 @@ static void __fastcall resolveZones(Int srcZone, Int targetZone, zoneStorageType
 	}
 }
 
+// TheSuperHackers @performance mohamed 17/11/2026 The zone tables used to be merged by resolveZones(), which
+// rewrites the whole table on every merge. On a big map that is billions of operations per recompute (a
+// multi-second freeze every time a structure is placed, finished or destroyed). The union-find versions in
+// ZoneMerge.h give the same tables. Set the environment variable GENZH_OLD_ZONES to run the old code instead
+// (to compare the result hashes in ZoneVerify.log, see GENZH_ZONE_LOG).
+static Bool zoneMergeIsFast()
+{
+	static Int mode = -1;
+	if (mode < 0)
+		mode = (getenv("GENZH_OLD_ZONES") != nullptr) ? 0 : 1;
+	return mode == 1;
+}
+
+static Bool zoneLogIsOn()
+{
+	static Int mode = -1;
+	if (mode < 0)
+		mode = (getenv("GENZH_ZONE_LOG") != nullptr) ? 1 : 0;
+	return mode == 1;
+}
+
+/// Merge two zones of an identity-initialised table (see applyZone).
+static void mergeZones(Int srcZone, Int targetZone, zoneStorageType *zoneEquivalency, Int sizeOfZE)
+{
+	if (zoneMergeIsFast())
+		zoneMergeIdentity<zoneStorageType>(srcZone, targetZone, zoneEquivalency);
+	else
+		resolveZones(srcZone, targetZone, zoneEquivalency, sizeOfZE);
+}
+
 static void flattenZones(zoneStorageType *zoneArray, zoneStorageType *zoneHierarchical, Int sizeOfZones)
 {
 	Int i;
@@ -2301,23 +2335,48 @@ static void flattenZones(zoneStorageType *zoneArray, zoneStorageType *zoneHierar
 		zone2 = zoneHierarchical[zone1];
 		zoneArray[i] = zone2;
 	}
-#if 1
 
-	for (i=0; i<sizeOfZones; i++) {
-		Int zone1 = zoneArray[i];
-		Int zone2 = zoneHierarchical[i];
-		if (zone1!=zone2) {
-			resolveZones(zone1, zone2, zoneArray, sizeOfZones);
+	Bool useFast = zoneMergeIsFast();
+	if (useFast) {
+		// the merger indexes with the table values, so make sure they are all in range (they always should be)
+		for (i=0; i<sizeOfZones; i++) {
+			if (zoneArray[i] >= (zoneStorageType)sizeOfZones || zoneHierarchical[i] >= (zoneStorageType)sizeOfZones) {
+				useFast = FALSE;
+				break;
+			}
 		}
 	}
-#endif
+
+	if (useFast) {
+		ZoneValueMerger<zoneStorageType> merger;
+		merger.init(zoneArray, sizeOfZones);
+		for (i=0; i<sizeOfZones; i++) {
+			Int zone1 = merger.value(i);
+			Int zone2 = zoneHierarchical[i];
+			if (zone1!=zone2) {
+				merger.merge(zone1, zone2);
+			}
+		}
+		merger.store(zoneArray);
+	} else {
+		for (i=0; i<sizeOfZones; i++) {
+			Int zone1 = zoneArray[i];
+			Int zone2 = zoneHierarchical[i];
+			if (zone1!=zone2) {
+				resolveZones(zone1, zone2, zoneArray, sizeOfZones);
+			}
+		}
+	}
 }
 
+/** Merge the zone of the source cell into the zone of the target cell. The table must be identity
+initialised (zoneEquivalency[z] == z when the pass starts); read it with zoneFind() until the pass is done
+and the table has been flattened. */
 inline void applyZone(PathfindCell &targetCell, const PathfindCell &sourceCell, zoneStorageType *zoneEquivalency, Int sizeOfZE)
 {
 	DEBUG_ASSERTCRASH(sourceCell.getZone()!=0, ("Unset source zone."));
-	Int srcZone = zoneEquivalency[sourceCell.getZone()];
-	Int targetZone = zoneEquivalency[targetCell.getZone()];
+	Int srcZone = zoneFind<zoneStorageType>(zoneEquivalency, sourceCell.getZone());
+	Int targetZone = zoneFind<zoneStorageType>(zoneEquivalency, targetCell.getZone());
 
 	if (targetZone == 0) {
 		targetCell.setZone(srcZone);
@@ -2326,8 +2385,73 @@ inline void applyZone(PathfindCell &targetCell, const PathfindCell &sourceCell, 
 	if (targetZone == srcZone) {
 		return; // already match.
 	}
-	resolveZones(srcZone, targetZone, zoneEquivalency, sizeOfZE);
+	mergeZones(srcZone, targetZone, zoneEquivalency, sizeOfZE);
 
+}
+
+// TheSuperHackers @fix mohamed 17/11/2026 calculateZones used to allocate two tables of one entry PER CELL
+// (about 19 MB each on the world map) every time it ran, and free them again. Allocating 40 MB twice per
+// building on a 32-bit process whose address space is already crowded by the terrain buffers is what ended in
+// "ERROR_OUT_OF_MEMORY" crashes. The tables are now kept between runs and sized by the zones actually used
+// (about a handful per 10x10 block), growing on demand.
+static zoneStorageType *s_zoneScratch = nullptr;
+static Int s_zoneScratchCapacity = 0;
+static Int s_zoneScratchDirty = 0;		///< entries [0, dirty) may have been changed by the last run
+static Int *s_collapsedScratch = nullptr;
+static Int s_collapsedScratchCapacity = 0;
+
+static void freeZoneScratch()
+{
+	delete [] s_zoneScratch;
+	s_zoneScratch = nullptr;
+	s_zoneScratchCapacity = 0;
+	s_zoneScratchDirty = 0;
+	delete [] s_collapsedScratch;
+	s_collapsedScratch = nullptr;
+	s_collapsedScratchCapacity = 0;
+}
+
+/// Make sure the identity table can hold at least newCapacity entries (never more than hardMax).
+static zoneStorageType *growZoneScratch(Int newCapacity, Int hardMax)
+{
+	if (newCapacity > hardMax)
+		newCapacity = hardMax;
+	if (newCapacity <= s_zoneScratchCapacity)
+		return s_zoneScratch;
+	zoneStorageType *bigger = MSGNEW("PathfindZones") zoneStorageType[newCapacity];
+	Int i;
+	for (i=0; i<s_zoneScratchCapacity; i++) {
+		bigger[i] = s_zoneScratch[i];
+	}
+	for (; i<newCapacity; i++) {
+		bigger[i] = i;
+	}
+	delete [] s_zoneScratch;
+	s_zoneScratch = bigger;
+	s_zoneScratchCapacity = newCapacity;
+	return s_zoneScratch;
+}
+
+/// The identity table for a new run: every entry the last run touched is reset.
+static zoneStorageType *acquireZoneScratch(Int hardMax, Int blockCount)
+{
+	Int i;
+	for (i=0; i<s_zoneScratchDirty && i<s_zoneScratchCapacity; i++) {
+		s_zoneScratch[i] = i;
+	}
+	s_zoneScratchDirty = 0;
+	growZoneScratch(blockCount * 8 + 64, hardMax);
+	return s_zoneScratch;
+}
+
+static Int *acquireCollapsedScratch(Int entries)
+{
+	if (entries > s_collapsedScratchCapacity) {
+		delete [] s_collapsedScratch;
+		s_collapsedScratchCapacity = entries + entries / 2;
+		s_collapsedScratch = MSGNEW("PathfindZones") Int[s_collapsedScratchCapacity];
+	}
+	return s_collapsedScratch;
 }
 
 inline void applyBlockZone(PathfindCell &targetCell, const PathfindCell &sourceCell,
@@ -2562,6 +2686,7 @@ m_zonesAllocated(0)
 
 PathfindZoneManager::~PathfindZoneManager()
 {
+	freeZoneScratch();
 	freeZones();
 	freeBlocks();
 }
@@ -2671,6 +2796,7 @@ void PathfindZoneManager::markZonesDirty()  ///< Called when the zones need to b
  */
 void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer layers[], const IRegion2D &globalBounds )
 {
+	HitchLog::Scope hitchScope("calculateZones");
 #ifdef DEBUG_QPF
 #if defined(DEBUG_LOGGING)
 	__int64 startTime64;
@@ -2682,6 +2808,12 @@ void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer laye
 	QueryPerformanceCounter((LARGE_INTEGER *)&startTime64);
 #endif
 #endif
+
+	__int64 zoneLogStart = 0, zoneLogFreq = 1;
+	if (zoneLogIsOn()) {
+		QueryPerformanceFrequency((LARGE_INTEGER *)&zoneLogFreq);
+		QueryPerformanceCounter((LARGE_INTEGER *)&zoneLogStart);
+	}
 
 	m_maxZone = 1;	// we start using zone 0 as a flag.
 
@@ -2698,11 +2830,9 @@ void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer laye
 	const Int cellCountY = globalBounds.hi.y - globalBounds.lo.y + 1;
 	// +2 for the 0 sentinel zone and one slot of headroom for the layer zones assigned below.
 	const Int maxZones = (cellCountX * cellCountY) + LAYER_LAST + 2;
-	zoneStorageType *zoneEquivalency = MSGNEW("PathfindZones") zoneStorageType[maxZones];
+	const Int blockCountForScratch = ((cellCountX + ZONE_BLOCK_SIZE - 1) / ZONE_BLOCK_SIZE) * ((cellCountY + ZONE_BLOCK_SIZE - 1) / ZONE_BLOCK_SIZE);
+	zoneStorageType *zoneEquivalency = acquireZoneScratch(maxZones, blockCountForScratch);
 	Int i, j;
-	for (i=0; i<maxZones; i++) {
-		zoneEquivalency[i] = i;
-	}
 	for (i=0; i<=LAYER_LAST; i++) {
 		layers[i].setZone(0);
 	}
@@ -2754,7 +2884,10 @@ void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer laye
 						// exist at all in Zero Hour builds and the overflow proceeded silently.
 						// maxZones is now sized from the actual map so this should be unreachable,
 						// but keep it as a hard backstop rather than corrupting memory.
-						if ((Int)m_maxZone >= maxZones) {
+						if ((Int)m_maxZone >= s_zoneScratchCapacity) {
+							zoneEquivalency = growZoneScratch(s_zoneScratchCapacity * 2, maxZones);
+						}
+						if ((Int)m_maxZone >= s_zoneScratchCapacity) {
 							DEBUG_CRASH(("Ran out of pathfind zones.  SERIOUS ERROR! jba."));
 							break;
 						}
@@ -2769,16 +2902,17 @@ void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer laye
 	}
 
 	Int totalZones = m_maxZone;
+	s_zoneScratchDirty = totalZones;
 
 	// Collapse the zones into a 1,2,3... sequence, removing collapsed zones.
 	m_maxZone = 1;
 	// TheSuperHackers @fix mohamed 09/08/2026 Was a fixed 24000-entry stack array -- see the
 	// zoneEquivalency comment above. Note this one is Int-sized, so at 24000 entries it was
 	// also ~96KB of stack on its own.
-	Int *collapsedZones = MSGNEW("PathfindZones") Int[maxZones];
+	Int *collapsedZones = acquireCollapsedScratch(totalZones + 1);
 	collapsedZones[0] = 0;
 	for (i=1; i<totalZones; i++) {
-		Int zone = zoneEquivalency[i];
+		Int zone = zoneFind<zoneStorageType>(zoneEquivalency, (zoneStorageType)i);
 		if (zone == i) {
 			collapsedZones[i] = m_maxZone;
 			++m_maxZone;
@@ -2858,7 +2992,7 @@ void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer laye
 			if ( (r_thisCell.getConnectLayer() > LAYER_GROUND) &&
 				(r_thisCell.getType() == PathfindCell::CELL_CLEAR) ) {
 				PathfindLayer *layer = layers + r_thisCell.getConnectLayer();
-				resolveZones(r_thisCell.getZone(), layer->getZone(), m_hierarchicalZones, m_maxZone);
+				mergeZones(r_thisCell.getZone(), layer->getZone(), m_hierarchicalZones, m_maxZone);
 			}
 
 			if ( i > globalBounds.lo.x && r_thisCell.getZone() != map[i-1][j].getZone() ) {
@@ -2970,6 +3104,16 @@ void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer laye
 		}
 	}
 
+	// The pass above left union-find forests in these tables; make them the flat tables everybody else reads.
+	if (zoneMergeIsFast()) {
+		zoneFlatten<zoneStorageType>(m_hierarchicalZones, m_maxZone);
+		zoneFlatten<zoneStorageType>(m_groundCliffZones, m_maxZone);
+		zoneFlatten<zoneStorageType>(m_groundWaterZones, m_maxZone);
+		zoneFlatten<zoneStorageType>(m_groundRubbleZones, m_maxZone);
+		zoneFlatten<zoneStorageType>(m_terrainZones, m_maxZone);
+		zoneFlatten<zoneStorageType>(m_crusherZones, m_maxZone);
+	}
+
 	//FLATTEN HIERARCHICAL ZONES
 	for (i=1; i<m_maxZone; i++) {
 		Int zone = m_hierarchicalZones[i];
@@ -3027,10 +3171,34 @@ void PathfindZoneManager::calculateZones( PathfindCell **map, PathfindLayer laye
 		}
 	}
 #endif
-	// TheSuperHackers @fix mohamed 09/08/2026 Release the zone scratch tables that are now
-	// heap-allocated at the top of this function (they used to be fixed-size stack arrays).
-	delete [] zoneEquivalency;
-	delete [] collapsedZones;
+	if (zoneLogIsOn()) {
+		__int64 zoneLogEnd = 0;
+		QueryPerformanceCounter((LARGE_INTEGER *)&zoneLogEnd);
+		UnsignedInt hash = 2166136261u;
+		Int hj, hi;
+		for (hj=globalBounds.lo.y; hj<=globalBounds.hi.y; hj++) {
+			for (hi=globalBounds.lo.x; hi<=globalBounds.hi.x; hi++) {
+				hash = (hash ^ (UnsignedInt)map[hi][hj].getZone()) * 16777619u;
+			}
+		}
+		Int hk;
+		for (hk=0; hk<(Int)m_maxZone; hk++) {
+			hash = (hash ^ (UnsignedInt)m_hierarchicalZones[hk]) * 16777619u;
+			hash = (hash ^ (UnsignedInt)m_groundCliffZones[hk]) * 16777619u;
+			hash = (hash ^ (UnsignedInt)m_groundWaterZones[hk]) * 16777619u;
+			hash = (hash ^ (UnsignedInt)m_groundRubbleZones[hk]) * 16777619u;
+			hash = (hash ^ (UnsignedInt)m_terrainZones[hk]) * 16777619u;
+			hash = (hash ^ (UnsignedInt)m_crusherZones[hk]) * 16777619u;
+		}
+		FILE *fp = fopen("ZoneVerify.log", "a");
+		if (fp) {
+			fprintf(fp, "frame %u  cells %dx%d  zones %u  raw %d  %.1f ms  hash %08x  %s\n",
+				(unsigned)TheGameLogic->getFrame(), cellCountX, cellCountY, (unsigned)m_maxZone, (int)totalZones,
+				(double)(zoneLogEnd - zoneLogStart) * 1000.0 / (double)zoneLogFreq, (unsigned)hash,
+				zoneMergeIsFast() ? "fast" : "old");
+			fclose(fp);
+		}
+	}
 
 	m_nextFrameToCalculateZones = 0xffffffff;
 }

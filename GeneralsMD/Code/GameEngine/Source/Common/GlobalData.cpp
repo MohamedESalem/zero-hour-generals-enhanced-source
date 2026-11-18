@@ -883,8 +883,8 @@ GlobalData::GlobalData()
 	m_cameraTopDownEndHeight = 12000.0f;
 	m_cameraZoomProportionalHeight = 600.0f;
 	m_worldOverlayDisabled = FALSE;
-	m_worldOverlayFadeStartHeight = 500.0f;
-	m_worldOverlayFadeEndHeight = 1100.0f;
+	m_worldOverlayFadeStartHeight = 1500.0f;	// province borders start to fade out (city names and province borders vanish together)
+	m_worldOverlayFadeEndHeight = 1800.0f;	// ... and are gone here; the first tier of city names ends here too
 	m_terrainHeightAtEdgeOfMap = 0.0f;
 
 	m_unitDamagedThresh = 0.5f;

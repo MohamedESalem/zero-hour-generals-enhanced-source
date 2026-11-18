@@ -306,8 +306,9 @@ static const ScaleEntry s_table[] =
 //     forces/impulses, not distances; they only drive cosmetic debris.
 //   PartitionCellSize / pathfind cell size: spatial-index and pathfinder granularity, not object
 //     data. Raising unit density per cell costs performance but not correctness.
-//   Terrain / water / bridge / road tables, MinDistFromEdgeOfMapForBuild, SupplyBuildBorder,
-//     AllowedHeightVariationForBuilding: map data, not unit data.
+//   Terrain / water / bridge / road tables, MinDistFromEdgeOfMapForBuild,
+//     AllowedHeightVariationForBuilding: map data, not unit data. (SupplyBuildBorder is a distance between
+//     footprints and IS scaled, in BuildAssistant::isLocationLegalToBuild, by the collision scale.)
 //   StructureRubbleHeight (UnsignedByte): rounds to 0 for small structures; the GameData default
 //     above is scaled instead.
 //   MinesPerSquareFoot / SparksPerCubicFoot (densities): intentionally left so a smaller area
