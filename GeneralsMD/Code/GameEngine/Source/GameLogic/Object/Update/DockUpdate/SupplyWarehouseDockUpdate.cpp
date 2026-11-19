@@ -38,6 +38,12 @@
 #include "GameLogic/PartitionManager.h"
 #include "GameLogic/AIPathfind.h"
 
+Int SupplyWarehouseDockUpdateModuleData::getStartingBoxes() const
+{
+	const Int factor = TheGlobalData->m_economySupplyBoxesFactor > 0 ? TheGlobalData->m_economySupplyBoxesFactor : 1;
+	return m_startingBoxesData * factor;
+}
+
 // ------------------------------------------------------------------------------------------------
 // ------------------------------------------------------------------------------------------------
 SupplyWarehouseDockUpdateModuleData::SupplyWarehouseDockUpdateModuleData()

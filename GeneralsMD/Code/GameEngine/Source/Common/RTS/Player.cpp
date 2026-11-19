@@ -2916,9 +2916,11 @@ static void countExisting( Object *obj, void *userData )
 // Make sure that building another of this unit/structure/object won't exceed MaxSimultaneousOfType()
 Bool Player::canBuildMoreOfType( const ThingTemplate *whatToBuild ) const
 {
-  // Secondary economy (black market, supply drop zone, internet center, money hackers) has no build limit, for players and the AI alike.
-  if( whatToBuild->isKindOf( KINDOF_FS_BLACK_MARKET ) || whatToBuild->isKindOf( KINDOF_FS_SUPPLY_DROPZONE )
-      || whatToBuild->isKindOf( KINDOF_FS_INTERNET_CENTER ) || whatToBuild->isKindOf( KINDOF_MONEY_HACKER ) )
+  // Reimagined: secondary economy (black market, supply drop zone, internet center, money hackers) has no build limit
+  // when EconomyUnlimitedSecondary = Yes. Off by default.
+  if( TheGlobalData->m_economyUnlimitedSecondary &&
+      ( whatToBuild->isKindOf( KINDOF_FS_BLACK_MARKET ) || whatToBuild->isKindOf( KINDOF_FS_SUPPLY_DROPZONE )
+      || whatToBuild->isKindOf( KINDOF_FS_INTERNET_CENTER ) || whatToBuild->isKindOf( KINDOF_MONEY_HACKER ) ) )
     return true;
 
   // make sure we're not maxed out for this type of unit.

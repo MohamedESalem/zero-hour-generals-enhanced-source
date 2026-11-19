@@ -1568,9 +1568,11 @@ Int ThingTemplate::calcCostToBuild( const Player* player) const
 	// changePercent format is "-.2 equals 20% cheaper"
 	Real factionModifier = 1 + player->getProductionCostChangePercent( getName() );
 	factionModifier *= player->getProductionCostChangeBasedOnKindOf( m_kindof );
-	// everything costs half, except the superweapon structures (particle cannon, scud storm, nuclear missile)
-	if (!isKindOf( KINDOF_FS_SUPERWEAPON ))
-		factionModifier *= 0.5f;
+#if RTS_ZEROHOUR
+	// Reimagined: everything costs EconomyCostFactor (0.5 there) except the superweapon structures. 1.0 (off) by default.
+	if (TheGlobalData->m_economyCostFactor > 0.0f && !isKindOf( KINDOF_FS_SUPERWEAPON ))
+		factionModifier *= TheGlobalData->m_economyCostFactor;
+#endif
 	return getBuildCost() * factionModifier * player->getHandicap()->getHandicap(Handicap::BUILDCOST, this);
 }
 
@@ -1630,10 +1632,13 @@ Int ThingTemplate::calcTimeToBuild( const Player* player) const
 		}
 	}
 
-	// Everything is built and produced this much faster than the INI build time says (units from factories and buildings by dozers alike).
-	// A logic setting: it has to be the same on every machine of a multiplayer game.
-	const Real BUILD_SPEED_FACTOR = 1.5f;
-	if (buildTime > 1)
+#if RTS_ZEROHOUR
+	// Reimagined: everything is built EconomyBuildSpeedFactor times faster (1.5 there). 1.0 (off) by default.
+	const Real BUILD_SPEED_FACTOR = TheGlobalData->m_economyBuildSpeedFactor > 0.0f ? TheGlobalData->m_economyBuildSpeedFactor : 1.0f;
+#else
+	const Real BUILD_SPEED_FACTOR = 1.0f;
+#endif
+	if (buildTime > 1 && BUILD_SPEED_FACTOR != 1.0f)
 	{
 		buildTime = (Int)((Real)buildTime / BUILD_SPEED_FACTOR);
 		if (buildTime < 1)

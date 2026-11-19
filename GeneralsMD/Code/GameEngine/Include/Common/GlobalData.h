@@ -425,6 +425,13 @@ public:
 	UnsignedInt m_replayCRCTraceTo;
 	UnsignedInt m_replayTraceObject;	///< -replayTraceObject: write position, path and pathfinds of this object instead of all object CRCs
 	Int m_aiHardBaseExtra;				///< how far beyond the radius of the starting base the hard AI may build
+
+	// TheSuperHackers @feature mohamed 20/11/2026 Reimagined's economy changes, OFF by default so End of Days and the
+	// world map economy play as designed. GameData.ini keys; logic settings, equal on every machine of a game.
+	Real m_economyCostFactor;			///< EconomyCostFactor: build cost multiplier, superweapons excluded (Reimagined: 0.5)
+	Real m_economyBuildSpeedFactor;		///< EconomyBuildSpeedFactor: build time divisor (Reimagined: 1.5)
+	Int m_economySupplyBoxesFactor;		///< EconomySupplyBoxesFactor: supply dock boxes multiplier (Reimagined: 10)
+	Bool m_economyUnlimitedSecondary;	///< EconomyUnlimitedSecondary: no build limit on black markets, drop zones, internet centers, hackers
 	Real m_BuildSpeed;
 	Real m_MinDistFromEdgeOfMapForBuild;
 	Real m_SupplyBuildBorder;

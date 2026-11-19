@@ -44,6 +44,7 @@
 #include "GameLogic/AI.h"
 #include "GameLogic/AIPathfind.h"
 #include "GameLogic/AISkirmishPlayer.h"
+#include "GameLogic/ConquestManager.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/SidesList.h"
 #include "GameLogic/Module/AIUpdate.h"
@@ -543,6 +544,8 @@ void AISkirmishPlayer::processHardArmy()
 		Player *owner = obj->getControllingPlayer();
 		if (owner == nullptr || owner == m_player || m_player->getRelationship( owner->getDefaultTeam() ) != ENEMIES)
 			continue;
+		if (ConquestManager::isDefenderPlayer( owner ))
+			continue;	// the world map's country defenders only guard their own country, no target for an attack wave
 		const Real dx = obj->getPosition()->x - m_baseCenter.x;
 		const Real dy = obj->getPosition()->y - m_baseCenter.y;
 		const Real d = dx * dx + dy * dy;

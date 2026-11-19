@@ -46,9 +46,8 @@ public:
 
 	Int m_startingBoxesData;
 
-	// Docks hold ten times the boxes the INI asks for (30000 -> 300000 cash). Fixed factor, so every machine in a game agrees.
-	static constexpr Int STARTING_BOXES_FACTOR = 10;
-	Int getStartingBoxes() const { return m_startingBoxesData * STARTING_BOXES_FACTOR; }
+	// Reimagined: docks hold EconomySupplyBoxesFactor times the INI boxes (10 there). 1 (off) by default.
+	Int getStartingBoxes() const;
 	Bool m_deleteWhenEmpty;
 };
 

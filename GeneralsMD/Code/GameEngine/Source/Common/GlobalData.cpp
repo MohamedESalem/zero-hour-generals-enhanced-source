@@ -360,6 +360,10 @@ GlobalData* GlobalData::m_theOriginal = nullptr;
 	{ "JobThreads",					INI::parseInt,				nullptr,			offsetof( GlobalData, m_jobThreads ) },
 	{ "PathfindPrefetch",		INI::parseBool,				nullptr,			offsetof( GlobalData, m_pathfindPrefetch ) },
 	{ "AIHardBaseExtra",				INI::parseInt,				nullptr,			offsetof( GlobalData, m_aiHardBaseExtra ) },
+	{ "EconomyCostFactor",				INI::parseReal,				nullptr,			offsetof( GlobalData, m_economyCostFactor ) },
+	{ "EconomyBuildSpeedFactor",		INI::parseReal,				nullptr,			offsetof( GlobalData, m_economyBuildSpeedFactor ) },
+	{ "EconomySupplyBoxesFactor",		INI::parseInt,				nullptr,			offsetof( GlobalData, m_economySupplyBoxesFactor ) },
+	{ "EconomyUnlimitedSecondary",		INI::parseBool,				nullptr,			offsetof( GlobalData, m_economyUnlimitedSecondary ) },
 
 	{ "AudioOn",										INI::parseBool,				nullptr,			offsetof( GlobalData, m_audioOn ) },
 	{ "MusicOn",										INI::parseBool,				nullptr,			offsetof( GlobalData, m_musicOn ) },
@@ -843,6 +847,10 @@ GlobalData::GlobalData()
 	m_aiHardHarvesterBonus = 100;
 	m_aiHardArmyWave = 25;
 	m_aiHardBaseExtra = 600;
+	m_economyCostFactor = 1.0f;
+	m_economyBuildSpeedFactor = 1.0f;
+	m_economySupplyBoxesFactor = 1;
+	m_economyUnlimitedSecondary = FALSE;
 	m_logicProfile = TRUE;
 	m_jobThreads = -1;
 	// Off for now: most of the time goes into a few long searches, so the threads gain less than the bookkeeping costs.
