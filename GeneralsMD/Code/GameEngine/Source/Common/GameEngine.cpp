@@ -967,10 +967,10 @@ enum { FAULT_CALLERS = 20 };
 struct FaultException
 {
 	unsigned int code;
-	unsigned int address;
+	UINT_PTR address;
 	unsigned int access;						///< 0 read, 1 write, 8 execute
-	unsigned int target;						///< the address it tried to touch
-	unsigned int callers[ FAULT_CALLERS ];
+	UINT_PTR target;						///< the address it tried to touch
+	UINT_PTR callers[ FAULT_CALLERS ];
 	int callerCount;
 };
 
@@ -981,17 +981,21 @@ static void __cdecl faultTranslator( unsigned int code, struct _EXCEPTION_POINTE
 
 	FaultException fault;
 	fault.code = code;
-	fault.address = (unsigned int)pointers->ExceptionRecord->ExceptionAddress;
+	fault.address = (UINT_PTR)pointers->ExceptionRecord->ExceptionAddress;
 	fault.access = pointers->ExceptionRecord->NumberParameters > 0 ? (unsigned int)pointers->ExceptionRecord->ExceptionInformation[ 0 ] : 0;
-	fault.target = pointers->ExceptionRecord->NumberParameters > 1 ? (unsigned int)pointers->ExceptionRecord->ExceptionInformation[ 1 ] : 0;
+	fault.target = pointers->ExceptionRecord->NumberParameters > 1 ? (UINT_PTR)pointers->ExceptionRecord->ExceptionInformation[ 1 ] : 0;
 	fault.callerCount = 0;
 
-	const unsigned int base = (unsigned int)GetModuleHandle( nullptr );
-	const unsigned int limit = base + 0x700000;
-	const unsigned int *stack = (const unsigned int *)pointers->ContextRecord->Esp;
+	const UINT_PTR base = (UINT_PTR)GetModuleHandle( nullptr );
+	const UINT_PTR limit = base + 0x2000000;
+#ifdef _WIN64
+	const UINT_PTR *stack = (const UINT_PTR *)pointers->ContextRecord->Rsp;
+#else
+	const UINT_PTR *stack = (const UINT_PTR *)pointers->ContextRecord->Esp;
+#endif
 	for( int i = 0; i < 2048 && fault.callerCount < FAULT_CALLERS; ++i )
 	{
-		unsigned int word = 0;
+		UINT_PTR word = 0;
 		__try { word = stack[ i ]; }
 		__except( EXCEPTION_EXECUTE_HANDLER ) { break; }
 		if( word >= base + 0x1000 && word < limit )
@@ -1003,11 +1007,11 @@ static void __cdecl faultTranslator( unsigned int code, struct _EXCEPTION_POINTE
 
 static void describeFault( const FaultException &fault, char *buffer, int size )
 {
-	const unsigned int base = (unsigned int)GetModuleHandle( nullptr );
-	int used = _snprintf( buffer, size, "Fault %08X (%s) at exe+0x%X, address 0x%08X; stack:", fault.code,
-		fault.access == 1 ? "write" : fault.access == 8 ? "execute" : "read", fault.address - base, fault.target );
+	const UINT_PTR base = (UINT_PTR)GetModuleHandle( nullptr );
+	int used = _snprintf( buffer, size, "Fault %08X (%s) at exe+0x%X, address 0x%p; stack:", fault.code,
+		fault.access == 1 ? "write" : fault.access == 8 ? "execute" : "read", (unsigned)(fault.address - base), (void *)fault.target );
 	for( int i = 0; i < fault.callerCount && used > 0 && used < size - 14; ++i )
-		used += _snprintf( buffer + used, size - used, " %X", fault.callers[ i ] - base );
+		used += _snprintf( buffer + used, size - used, " %X", (unsigned)(fault.callers[ i ] - base) );
 	buffer[ size - 1 ] = 0;
 }
 

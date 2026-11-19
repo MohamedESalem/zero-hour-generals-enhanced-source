@@ -46,6 +46,7 @@
 //         Includes
 //-----------------------------------------------------------------------------
 #include "W3DDevice/GameClient/HeightMap.h"
+#include "W3DDevice/GameClient/W3DScorch.h"
 
 #ifndef USE_FLAT_HEIGHT_MAP // Flat height map uses flattened textures. jba. [3/20/2003]
 
@@ -1713,9 +1714,8 @@ void HeightMapRenderObjClass::updateCenter(CameraClass *camera, const Vector3 *c
 			{
 				m_regionRelightPending = false;
 				// what staticLightingChanged() does besides the terrain: scorches and roads are relit once, not once per cell
-				m_scorchesInBuffer = 0;
-				m_curNumScorchVertices = 0;
-				m_curNumScorchIndices = 0;
+				m_scorches->invalidateBuffers();
+				m_staticScorches->invalidateBuffers();
 				if (m_roadBuffer)
 					m_roadBuffer->updateLighting();
 			}
