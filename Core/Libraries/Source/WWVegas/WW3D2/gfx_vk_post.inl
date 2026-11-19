@@ -59,6 +59,7 @@ struct ShadowState
 	float sun[3] = { 0.45f, 0.45f, 0.77f };		// world space direction towards the sun
 	bool haveSun = false;
 	bool suppress = false;
+	bool tooHigh = false;			// camera above shadowMaxCameraHeight: no shadow pass this frame
 	std::vector<ShadowCaster> casters;
 	float groundZ = 0.0f;
 	float lightVP[16] = {};

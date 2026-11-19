@@ -730,6 +730,8 @@ void GameEngine::init()
 			{
 				TheWritableGlobalData->m_shellMapOn = FALSE;
 				TheWritableGlobalData->m_playIntro = FALSE;
+				// TheSuperHackers @fix mohamed 20/11/2026 ... and no sizzle trailer either: it kept a -file start on a black screen for two minutes
+				TheWritableGlobalData->m_playSizzle = FALSE;
 				TheWritableGlobalData->m_pendingFile = TheGlobalData->m_initialFile;
 
 				// shutdown the top, but do not pop it off the stack

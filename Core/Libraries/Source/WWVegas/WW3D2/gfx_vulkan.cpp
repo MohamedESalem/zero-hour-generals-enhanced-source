@@ -1480,9 +1480,10 @@ void PresentFrame()
 		waitMs += (double)(t1q.QuadPart - t0q.QuadPart) * 1000.0 / (double)freq.QuadPart;
 		if (lastEnd.QuadPart) totalMs += (double)(t1q.QuadPart - lastEnd.QuadPart) * 1000.0 / (double)freq.QuadPart;
 		lastEnd = t1q;
-		if (++frames == 600)
+		++frames;
+		if (frames == 600 || (frames > 1 && totalMs >= 5000.0))
 		{
-			Log("timing: %.2f ms per frame, of which the CPU waits %.2f ms for the GPU (%d draws last frame, ring peak %u MB of %u)", totalMs / 599.0, waitMs / 600.0, (int)g_drawsLast, (unsigned)(g_ringPeak >> 20), (unsigned)(B.ringPerFrame >> 20));
+			Log("timing: %.2f ms per frame over %d frames, of which the CPU waits %.2f ms for the GPU (%d draws last frame, ring peak %u MB of %u, sun shadows %s)", totalMs / (frames - 1), frames, waitMs / frames, (int)g_drawsLast, (unsigned)(g_ringPeak >> 20), (unsigned)(B.ringPerFrame >> 20), ShadowsEnabled() ? "on" : "off");
 			g_ringPeak = 0;
 			waitMs = totalMs = 0.0; frames = 0; lastEnd.QuadPart = 0;
 		}
@@ -2410,6 +2411,11 @@ void VkGfx_BeginScene3D(float sunX, float sunY, float sunZ)
 	B.stage = 0; B.scene3D = true; B.colorLoaded = false; B.depthLoaded = false; B.depthCopyDone = false; B.lightingApplied = false; B.lightingDone = false;
 }
 bool VkGfx_ShadowMapsActive() { return g_sh.on && B.postOn && B.ready; }
+void VkGfx_SetCameraHeight(float heightAboveGround)
+{
+	const float limit = g_cfg.shadowMaxCameraHeight;
+	g_sh.tooHigh = limit > 0.0f && heightAboveGround > limit;
+}
 void VkGfx_SuppressSceneDraws(bool s) { g_sh.suppress = s; }
 void VkGfx_SoftDraws(bool soft) { g_softDraw = soft; }
 bool VkGfx_SoftDrawsActive() { return g_softDraw; }
@@ -2430,6 +2436,7 @@ bool VkGfx_Requested() { return false; }
 IDirect3D8* WINAPI VkGfx_Direct3DCreate8(UINT) { return nullptr; }
 void VkGfx_BeginScene3D(float, float, float) {}
 bool VkGfx_ShadowMapsActive() { return false; }
+void VkGfx_SetCameraHeight(float) {}
 void VkGfx_SuppressSceneDraws(bool) {}
 void VkGfx_SoftDraws(bool) {}
 bool VkGfx_SoftDrawsActive() { return false; }

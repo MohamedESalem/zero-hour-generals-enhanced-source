@@ -107,6 +107,10 @@ void View::init()
 		OptionPreferences prefs;
 		OptionPreferences::const_iterator it = prefs.find("MaxCameraHeight");
 		Real maxHeight = it != prefs.end() ? (Real)atof(it->second.str()) : 450.0f;
+		// TheSuperHackers @fix mohamed 20/11/2026 Options.ini / the 450 default only RAISE the limit: GameData.ini and -cameraZoom
+		// (the world map: 40000) set it higher, and lowering it here capped the world map's zoom-out. -maxZoom still wins.
+		if (maxHeight < TheGlobalData->m_maxCameraHeight)
+			maxHeight = TheGlobalData->m_maxCameraHeight;
 		if (g_maxCameraHeightOverride > 0.0f)
 			maxHeight = g_maxCameraHeightOverride;
 		if (maxHeight > TheGlobalData->m_minCameraHeight)

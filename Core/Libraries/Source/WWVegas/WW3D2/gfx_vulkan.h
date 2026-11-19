@@ -22,6 +22,7 @@ struct VkGfx_Settings
 	float cloudShadowStrength = 0.85f;
 	// Options.ini keys DynamicLights, DynamicLightStrength, AnisotropicFiltering, PixelLighting, SpecularStrength
 	int shadowQuality = 1;			// 2 high (4096 shadow map, full filtering), 1 medium (2048 map, the default), 0 low (2048 map, fewer filter taps)
+	float shadowMaxCameraHeight = 1200.0f;	// ShadowMaxCameraHeight: no sun shadows above this camera height (0 = always); far out they cannot be seen but cost a second pass over everything
 	bool aoHalfResolution = true;	// ambient occlusion at half resolution
 	bool dynamicLights = true;		// explosions and other light pulses of the game light their surroundings (screen space)
 	float dynamicLightStrength = 1.0f;
@@ -38,6 +39,7 @@ bool VkGfx_Requested();
 IDirect3D8* WINAPI VkGfx_Direct3DCreate8(UINT sdkVersion);
 void VkGfx_BeginScene3D(float sunX, float sunY, float sunZ);
 bool VkGfx_ShadowMapsActive();
+void VkGfx_SetCameraHeight(float heightAboveGround);		// every frame: the sun shadow pass is skipped above Settings::shadowMaxCameraHeight
 void VkGfx_SoftDraws(bool soft);			// following draws are particles: the native renderer fades them where they meet geometry
 bool VkGfx_SoftDrawsActive();
 void VkGfx_SuppressSceneDraws(bool suppress);		// the engine's own shadow draws to the back buffer are dropped while set

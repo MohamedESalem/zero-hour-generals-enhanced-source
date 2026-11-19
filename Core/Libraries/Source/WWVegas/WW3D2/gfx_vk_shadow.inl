@@ -5,7 +5,7 @@
 // scene depth, searches the map for blockers and filters over a width that grows with the distance to the nearest blocker: sharp next to the
 // object that casts the shadow, softer further away, like a sun that is not a point light.
 
-bool ShadowsEnabled() { return g_sh.on && B.postOn && g_sh.haveSun; }
+bool ShadowsEnabled() { return g_sh.on && B.postOn && g_sh.haveSun && !g_sh.tooHigh; }
 
 void RecordCaster(const DrawUbo& u, VkBuffer vbuf, VkBuffer ibuf, int32_t vertexOffset, VkDeviceSize vOff, VkDeviceSize iOff, uint32_t nv, uint32_t ni, int wide, uint32_t topology, uint32_t fvf, uint32_t stride, int minIndex, GpuTexture* tex0, float worldZ)
 {
