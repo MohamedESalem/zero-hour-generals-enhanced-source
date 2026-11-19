@@ -629,6 +629,12 @@ void AIGuardReturnState::xfer( Xfer *xfer )
   xfer->xferVersion( &version, currentVersion );
 
 	xfer->xferUnsignedInt(&m_nextReturnScanTime);
+	// TheSuperHackers @fix mohamed 20/11/2026 The goal of the return move (AIInternalMoveToState) is not part of this
+	// snapshot, so after loading a game it was (0,0) and every unit on its way back to its guard spot searched a path to
+	// the map corner (seconds per search on a world-sized map). It is recomputed on the first update instead; the save
+	// format stays the same.
+	if (xfer->getXferMode() == XFER_LOAD)
+		m_goalLostInLoad = TRUE;
 }
 
 // ------------------------------------------------------------------------------------------------
@@ -639,15 +645,8 @@ void AIGuardReturnState::loadPostProcess()
 }
 
 //--------------------------------------------------------------------------------------
-StateReturnType AIGuardReturnState::onEnter()
+void AIGuardReturnState::computeGoal()
 {
-	UnsignedInt now = TheGameLogic->getFrame();
-	m_nextReturnScanTime = now + GameLogicRandomValue(0, TheAI->getAiData()->m_guardEnemyReturnScanRate);
-
-// no, no, no, don't do this in onEnter, unless you like really slow maps. (srj)
-//	if (getGuardMachine()->lookForInnerTarget())
-//		return STATE_FAILURE; // early termination because we found a target.
-
 	Object* targetToGuard = getGuardMachine()->findTargetToGuardByID();
 	m_goalPosition = targetToGuard ? *targetToGuard->getPosition() : *getGuardMachine()->getPositionToGuard();
 
@@ -661,6 +660,19 @@ StateReturnType AIGuardReturnState::onEnter()
 	{
 		TheAI->pathfinder()->adjustDestination(getMachineOwner(), ai->getLocomotorSet(), &m_goalPosition);
 	}
+}
+
+//--------------------------------------------------------------------------------------
+StateReturnType AIGuardReturnState::onEnter()
+{
+	UnsignedInt now = TheGameLogic->getFrame();
+	m_nextReturnScanTime = now + GameLogicRandomValue(0, TheAI->getAiData()->m_guardEnemyReturnScanRate);
+
+// no, no, no, don't do this in onEnter, unless you like really slow maps. (srj)
+//	if (getGuardMachine()->lookForInnerTarget())
+//		return STATE_FAILURE; // early termination because we found a target.
+
+	computeGoal();
 	setAdjustsDestination(true);
 	return AIInternalMoveToState::onEnter();
 }
@@ -668,6 +680,11 @@ StateReturnType AIGuardReturnState::onEnter()
 //--------------------------------------------------------------------------------------
 StateReturnType AIGuardReturnState::update()
 {
+	if (m_goalLostInLoad)
+	{
+		m_goalLostInLoad = FALSE;
+		computeGoal();
+	}
 	UnsignedInt now = TheGameLogic->getFrame();
 	if (now >= m_nextReturnScanTime)
 	{

@@ -129,7 +129,13 @@ Bool FramePacer::isActualFramesPerSecondLimitEnabled() const
 
 Int FramePacer::getActualFramesPerSecondLimit() const
 {
-	return isActualFramesPerSecondLimitEnabled() ? getFramesPerSecondLimit() : RenderFpsPreset::UncappedFpsValue;
+	if (isActualFramesPerSecondLimitEnabled())
+		return getFramesPerSecondLimit();
+	// TheSuperHackers @tweak mohamed 20/11/2026 With the cap off, the main menu and loading screens drew about 1400 fps
+	// and kept the GPU at 100% for nothing. Outside a real game they are held at 60 fps; games stay uncapped.
+	if (TheGameLogic == nullptr || !TheGameLogic->isInGame() || TheGameLogic->isInShellGame())
+		return 60;
+	return RenderFpsPreset::UncappedFpsValue;
 }
 
 Real FramePacer::getUpdateTime()  const

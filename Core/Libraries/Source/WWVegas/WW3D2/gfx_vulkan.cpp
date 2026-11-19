@@ -25,6 +25,7 @@
 #include <map>
 #include <string>
 #include <algorithm>
+#include <vector>
 
 using namespace gfxmem;
 
@@ -1337,6 +1338,14 @@ template <class Buf> GpuBuf* CachedGpuBuffer(Buf* b, VkBufferUsageFlags usage)
 }
 
 uint32_t g_drawsLast = 0;
+// Diagnostics for slow scenes (world map): GENERALS_DRAWSTATS=1 logs, every 10 s, the draws of one frame grouped by kind
+// (vertex format, blending, depth write, water, 2D) with their vertex and index counts. GENERALS_SKIP=<mask> drops a class
+// of draws to measure what it costs: 1 blended 3D, 2 opaque 3D with more than 1000 indices, 4 opaque 3D up to 1000 indices,
+// 8 pre-transformed 2D (interface, text), 16 water, 32 shadow casters only.
+struct DrawStat { uint32_t draws = 0; uint64_t verts = 0, indices = 0; };
+std::map<uint64_t, DrawStat> g_drawStats;
+const bool g_drawStatsOn = getenv("GENERALS_DRAWSTATS") != nullptr;
+const int g_skipMask = getenv("GENERALS_SKIP") ? atoi(getenv("GENERALS_SKIP")) : 0;
 VkDeviceSize g_ringPeak = 0;
 float g_scorchRelief = 0.0f;		// VkGfx_ScorchRelief: the draws that follow are scorch marks with a height map in stage 1
 
@@ -1419,6 +1428,27 @@ void PresentFrame()
 	}
 	if (g_frame % 4000 == 0)
 		Log("frame %u: ring %u MB of %u, drawn %u, skipped: offscreen %u, pixel shader %u, vertex shader %u, stencil %u, ring full %u | calls: DrawPrimitive %u DrawIndexed %u UP %u IndexedUP %u | no vb %u no ib %u, no vertices %u, no rendering %u", g_frame, (unsigned)((B.ringCursor - B.ringBase) >> 20), (unsigned)(B.ringPerFrame >> 20), g_cnt[0], g_cnt[1], g_cnt[2], g_cnt[3], g_cnt[4], g_cnt[5], g_cnt[6], g_cnt[7], g_cnt[10], g_cnt[11], g_cnt[8], g_cnt[9], g_cnt[12], g_cnt[13]);
+	if (g_drawStatsOn)
+	{
+		static DWORD lastDump = 0;
+		const DWORD now = GetTickCount();
+		if (now - lastDump > 10000 && g_cnt[14] > 500)
+		{
+			lastDump = now;
+			std::vector<std::pair<uint64_t, DrawStat>> v(g_drawStats.begin(), g_drawStats.end());
+			std::sort(v.begin(), v.end(), [](const std::pair<uint64_t, DrawStat>& a, const std::pair<uint64_t, DrawStat>& b) { return a.second.indices + a.second.verts > b.second.indices + b.second.verts; });
+			uint64_t ti = 0, tv = 0; for (auto& e : v) { ti += e.second.indices; tv += e.second.verts; }
+			Log("draw stats frame %u: %u draws, %llu vertices, %llu indices, %u kinds", g_frame, g_cnt[14], (unsigned long long)tv, (unsigned long long)ti, (unsigned)v.size());
+			for (size_t i = 0; i < v.size() && i < 25; ++i)
+			{
+				const uint64_t k = v[i].first;
+				Log("  fvf %03X stride %2u %s%s%s%s%s | %6u draws, %9llu verts, %9llu indices", (unsigned)(k & 0xFFF), (unsigned)((k >> 12) & 0xFF),
+					(k >> 20) & 1 ? "blend " : "opaque", (k >> 21) & 1 ? " zwrite" : "", (k >> 22) & 1 ? " 2D" : "", (k >> 23) & 1 ? " water" : "", (k >> 24) & 1 ? " tex" : "",
+					v[i].second.draws, (unsigned long long)v[i].second.verts, (unsigned long long)v[i].second.indices);
+			}
+		}
+		g_drawStats.clear();
+	}
 	g_drawsLast = g_cnt[14];
 	memset(g_cnt, 0, sizeof(g_cnt));
 	const bool ready = (B.postOn && B.stage == 0 && B.hdr) ? RunPostProcess() : EnsureRendering();
@@ -1944,6 +1974,19 @@ private:
 		if (m_pixelShader != 0 && !waterKind) { ++g_cnt[2]; Note("skipped, pixel shader", m_vertexShader); return D3D_OK; }
 		if ((m_vertexShader & 0x80000000u) || m_vertexShader == 0) { ++g_cnt[3]; Note("skipped, vertex shader", m_vertexShader); return D3D_OK; }
 		++g_cnt[0]; ++g_cnt[14];
+		if (g_drawStatsOn || g_skipMask)
+		{
+			const bool is2D = (m_vertexShader & 0xE) == 0x4;
+			const bool blend = m_renderStates[D3DRS_ALPHABLENDENABLE] != 0;
+			if (g_drawStatsOn)
+			{
+				const uint64_t key = (uint64_t)(m_vertexShader & 0xFFF) | ((uint64_t)(m_stride & 0xFF) << 12) | ((uint64_t)blend << 20)
+					| ((uint64_t)(m_renderStates[D3DRS_ZWRITEENABLE] != 0) << 21) | ((uint64_t)is2D << 22) | ((uint64_t)(waterKind != 0) << 23) | ((uint64_t)(m_tex[0] != nullptr) << 24);
+				DrawStat& st = g_drawStats[key]; ++st.draws; st.verts += numVertices; st.indices += indexCount;
+			}
+			const int cls = is2D ? 8 : waterKind ? 16 : blend ? 1 : (indexCount > 1000 ? 2 : 4);
+			if (g_skipMask & cls) return D3D_OK;
+		}
 		Note("drawn", m_vertexShader);
 		const DWORD fvf = m_vertexShader;
 		const bool pretransformed = (fvf & 0xE) == 0x4;
@@ -2178,7 +2221,7 @@ private:
 			++cnt[0]; if (!key.depthWrite) ++cnt[1]; if (key.blendEnable) ++cnt[2]; if (key.stencilEnable) ++cnt[3]; if (!key.colorMask) ++cnt[4]; if (key.topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST && key.topology != VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP) ++cnt[5];
 			if (++n % 3000 == 0) Log("scene draws %u: no zwrite %u, blend %u, stencil %u, no colour %u, other topology %u", cnt[0], cnt[1], cnt[2], cnt[3], cnt[4], cnt[5]);
 		}
-		if (!(dbg & 2) && B.stage == 0 && !B.curTarget && !pretransformed && !waterKind && ShadowsEnabled() && key.depthWrite && !key.blendEnable && key.colorMask
+		if (!(g_skipMask & 32) && !(dbg & 2) && B.stage == 0 && !B.curTarget && !pretransformed && !waterKind && ShadowsEnabled() && key.depthWrite && !key.blendEnable && key.colorMask
 			&& (key.topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST || key.topology == VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP))
 		{
 			GpuTexture* t0 = (m_tex[0] && u.flags[3]) ? EnsureGpuTexture(static_cast<NullTexture*>(m_tex[0])) : nullptr;

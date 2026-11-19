@@ -217,6 +217,7 @@ public:
 	AIGuardReturnState( StateMachine *machine ) : AIInternalMoveToState( machine, "AIGuardReturn" )
 	{
 		m_nextReturnScanTime = 0;
+		m_goalLostInLoad = FALSE;
 	}
 	virtual Bool isAttack() const override { return FALSE; }
 	virtual StateReturnType onEnter() override;
@@ -229,6 +230,8 @@ protected:
 	virtual void loadPostProcess() override;
 private:
 	UnsignedInt m_nextReturnScanTime;
+	Bool m_goalLostInLoad;		///< loaded from a save game: the goal of the move was not saved, recompute it (not saved itself)
+	void computeGoal();
 };
 EMPTY_DTOR(AIGuardReturnState)
 
