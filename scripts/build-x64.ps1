@@ -14,4 +14,10 @@ if ($Video) {
 } else {
     $preset = "win64"; $dir = "build/win64"; $opt = ""
 }
-cmd /c "`"$vs\VC\Auxiliary\Build\vcvarsall.bat`" x64 >nul 2>&1 && cd /d `"$root`" && cmake --preset $preset $opt -DCMAKE_RC_FLAGS=`"-DWIN32 /I$shim`" && cmake --build $dir --config $Config --target $Target $extra -- -k 0"
+# ATL (atlbase.h, used by the web browser code) is missing from the newest MSVC toolset of some Visual Studio installs but present in an older one.
+# The newest ATL found is appended as a fallback; the active toolset's own ATL, when it has one, is searched first.
+$atl = Get-ChildItem (Join-Path $vs "VC\Tools\MSVC") -Directory -ErrorAction SilentlyContinue | Sort-Object Name -Descending |
+    Where-Object { Test-Path (Join-Path $_.FullName "atlmfc\include\atlbase.h") } | Select-Object -First 1
+$atlSet = ""
+if ($atl) { $atlSet = 'set "INCLUDE=!INCLUDE!;' + $atl.FullName + '\atlmfc\include" && set "LIB=!LIB!;' + $atl.FullName + '\atlmfc\lib\x64" && ' }
+cmd /v:on /c "`"$vs\VC\Auxiliary\Build\vcvarsall.bat`" x64 >nul 2>&1 && $($atlSet)cd /d `"$root`" && cmake --preset $preset $opt -DCMAKE_RC_FLAGS=`"-DWIN32 /I$shim`" && cmake --build $dir --config $Config --target $Target $extra -- -k 0"

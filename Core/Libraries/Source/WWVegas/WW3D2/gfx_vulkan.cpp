@@ -150,8 +150,9 @@ struct DrawUbo
 	float camPos[4];		// xyz: camera in world space, w: strength of the per pixel highlight (0 = per pixel lighting off)
 	float relief[4];		// scorch marks: x strength of the relief lighting (0 = off), y depth of the crater as a part of its radius, zw: size of one texel of the height map
 	float reliefSun[4];		// xyz: direction towards the sun, w: ambient part of the light
+	float clipPlane[4];		// user clip plane 0 in world space (D3DRS_CLIPPLANEENABLE bit 0); 0,0,0,1 keeps everything
 };
-static_assert(sizeof(DrawUbo) == 256 + 64 + 64 + 16 + 16 + 5 * 64 + 64 + 8 * 64 + 8 * 16 + 32 + 32 + 16 + 32, "DrawUbo must match the std140 block in the shaders");
+static_assert(sizeof(DrawUbo) == 256 + 64 + 64 + 16 + 16 + 5 * 64 + 64 + 8 * 64 + 8 * 16 + 32 + 32 + 16 + 32 + 16, "DrawUbo must match the std140 block in the shaders");
 
 uint64_t g_uploads = 0, g_uploadBytes = 0, g_uploadFrameMark = 0;
 
@@ -225,6 +226,7 @@ struct Backend
 	GpuTexture* depthCopy = nullptr;
 	bool depthLoaded = false;						// the depth buffer already holds this frame's scene
 	bool colorLoaded = false;						// the frame already has content in the swapchain image (resume with load, not clear)
+	float frameClearAlpha = 1.0f;				// alpha of the game's last colour clear of the back buffer, used for the scene image
 	bool semaphoreUsed = false;						// imageAvailable was already waited on by an earlier submit of this frame
 	VkBuffer readBuf = VK_NULL_HANDLE;				// host visible destination of back buffer read backs
 	Allocation readAlloc;
@@ -416,6 +418,7 @@ void BeginCommandBuffer()
 bool CreatePostTargets();
 void DestroyPostTargets();
 bool AcquireSwap();
+bool SwapchainStale();
 bool RunPostProcess();
 bool CreatePostShaders();
 
@@ -1007,7 +1010,7 @@ bool CreateInstanceAndDevice(HWND window)
 	f13.dynamicRendering = VK_TRUE; f13.synchronization2 = VK_TRUE;
 	f13.shaderDemoteToHelperInvocation = VK_TRUE;		// the shaders' discard compiles to demote; a feature every Vulkan 1.3 device has (found by the validation layer)
 	VkPhysicalDeviceFeatures2 f2{ VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2 };
-	f2.pNext = &f13; f2.features.samplerAnisotropy = B.features.samplerAnisotropy; f2.features.textureCompressionBC = B.features.textureCompressionBC; f2.features.largePoints = B.features.largePoints;
+	f2.pNext = &f13; f2.features.samplerAnisotropy = B.features.samplerAnisotropy; f2.features.textureCompressionBC = B.features.textureCompressionBC; f2.features.largePoints = B.features.largePoints; f2.features.shaderClipDistance = B.features.shaderClipDistance;
 	const char* devExt[] = { VK_KHR_SWAPCHAIN_EXTENSION_NAME, VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME };
 	VkDeviceCreateInfo dci{ VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO };
 	dci.pNext = &f2; dci.queueCreateInfoCount = 1; dci.pQueueCreateInfos = &qci; dci.enabledExtensionCount = 2; dci.ppEnabledExtensionNames = devExt;
@@ -1188,7 +1191,10 @@ bool EnsureRendering()
 		VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT, VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT);
 	VkRenderingAttachmentInfo color{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
 	color.imageView = colorView; color.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-	color.loadOp = loadOp; color.storeOp = VK_ATTACHMENT_STORE_OP_STORE; color.clearValue.color = { { 0.f, 0.f, 0.f, 1.f } };
+	// The scene image starts with the alpha of the game's frame clear: the soft water edge blends with the destination
+	// alpha, which the game clears to the minimum water opacity and only writes on the shore line tiles. With 1 the deep
+	// water was opaque and met the shore tiles in steps along the terrain cells.
+	color.loadOp = loadOp; color.storeOp = VK_ATTACHMENT_STORE_OP_STORE; color.clearValue.color = { { 0.f, 0.f, 0.f, hdrStage ? B.frameClearAlpha : 1.f } };
 	VkRenderingAttachmentInfo depth{ VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO };
 	depth.imageView = B.depthView; depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 	depth.loadOp = depthLoadOp; depth.storeOp = VK_ATTACHMENT_STORE_OP_STORE; depth.clearValue.depthStencil = { 1.0f, 0 };
@@ -1355,6 +1361,36 @@ void GrowRing()
 	Log("ring buffer grown to %u MB per frame", (unsigned)(bigger >> 20));
 }
 
+// Drops the work recorded for the current frame (uploads still have to happen). The frame is not presented.
+void AbandonFrame()
+{
+	EndPass();
+	FlushUploadsSync();
+	B.colorLoaded = false; B.depthLoaded = false; B.semaphoreUsed = false; B.stage = 1; B.scene3D = false;
+	vkEndCommandBuffer(B.cmd);
+	vkResetCommandBuffer(B.cmd, 0);
+	BeginCommandBuffer();
+	B.ringCursor = B.ringBase;
+}
+
+// The swapchain is replaced when the window changed: a swapchain that is merely suboptimal but still has the surface's size stays (some drivers report
+// VK_SUBOPTIMAL_KHR for good, which would otherwise rebuild everything every frame).
+bool SwapchainStale()
+{
+	if (B.swapchain == VK_NULL_HANDLE)
+		return false;
+	VkSurfaceCapabilitiesKHR caps;
+	if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(B.phys, B.surface, &caps) != VK_SUCCESS)
+		return true;
+	if (caps.currentExtent.width == 0xFFFFFFFFu)
+	{
+		RECT rc;
+		GetClientRect(B.window, &rc);
+		return rc.right > rc.left && rc.bottom > rc.top && ((uint32_t)(rc.right - rc.left) != B.extent.width || (uint32_t)(rc.bottom - rc.top) != B.extent.height);
+	}
+	return caps.currentExtent.width != 0 && caps.currentExtent.height != 0 && (caps.currentExtent.width != B.extent.width || caps.currentExtent.height != B.extent.height);
+}
+
 void PresentFrame()
 {
 	if (!B.ready)
@@ -1389,13 +1425,7 @@ void PresentFrame()
 	if (!ready)
 	{
 		// minimised or the swapchain could not be made: just drop the frame's recorded work (uploads still have to happen)
-		EndPass();
-		FlushUploadsSync();
-		B.colorLoaded = false; B.depthLoaded = false; B.semaphoreUsed = false; B.stage = 1; B.scene3D = false;
-		vkEndCommandBuffer(B.cmd);
-		vkResetCommandBuffer(B.cmd, 0);
-		BeginCommandBuffer();
-		B.ringCursor = B.ringBase;
+		AbandonFrame();
 		return;
 	}
 	EndPass();
@@ -1470,7 +1500,7 @@ void PresentFrame()
 	B.ringBase = (VkDeviceSize)next * B.ringPerFrame; B.ringLimit = B.ringBase + B.ringPerFrame; B.ringCursor = B.ringBase;
 	vkResetCommandBuffer(B.cmd, 0);
 	BeginCommandBuffer();
-	if (pr == VK_ERROR_OUT_OF_DATE_KHR || pr == VK_SUBOPTIMAL_KHR)
+	if (pr == VK_ERROR_OUT_OF_DATE_KHR || pr == VK_ERROR_SURFACE_LOST_KHR || (pr == VK_SUBOPTIMAL_KHR && SwapchainStale()))
 		DestroySwapchain();
 }
 
@@ -1632,6 +1662,8 @@ public:
 
 	// ---- transforms and bound objects
 	STDMETHOD(SetTransform)(THIS_ D3DTRANSFORMSTATETYPE s, CONST D3DMATRIX* m) override { if ((UINT)s < 512) memcpy(m_matrix[s], m, 64); return D3D_OK; }
+	STDMETHOD(SetClipPlane)(THIS_ DWORD i, CONST float* p) override { if (i == 0 && p) memcpy(m_clipPlane, p, sizeof(m_clipPlane)); return D3D_OK; }
+	STDMETHOD(GetClipPlane)(THIS_ DWORD i, float* p) override { if (p) { if (i == 0) memcpy(p, m_clipPlane, sizeof(m_clipPlane)); else memset(p, 0, 16); } return D3D_OK; }
 	STDMETHOD(GetTransform)(THIS_ D3DTRANSFORMSTATETYPE s, D3DMATRIX* m) override { if ((UINT)s < 512) memcpy(m, m_matrix[s], 64); return D3D_OK; }
 	STDMETHOD(SetTexture)(THIS_ DWORD stage, IDirect3DBaseTexture8* tex) override
 	{
@@ -1763,11 +1795,28 @@ public:
 	STDMETHOD(Reset)(THIS_ D3DPRESENT_PARAMETERS* pp) override
 	{
 		NullDevice::Reset(pp);
-		if (B.ready) { DestroySwapchain(); B.acquired = false; }
+		if (B.ready)
+		{
+			// what was recorded for the old swapchain images must not be submitted; an image that was acquired but never presented leaves
+			// imageAvailable signalled, so the semaphore is replaced (acquiring with a signalled semaphore is invalid and left a black screen)
+			if (B.acquired)
+			{
+				AbandonFrame();
+				vkDeviceWaitIdle(B.device);
+				vkDestroySemaphore(B.device, B.imageAvailable, nullptr);
+				VkSemaphoreCreateInfo sei{ VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+				vkCreateSemaphore(B.device, &sei, nullptr, &B.imageAvailable);
+				B.slots[B.slot].imageAvailable = B.imageAvailable;
+			}
+			DestroySwapchain();
+			B.acquired = false;
+		}
 		return D3D_OK;
 	}
 	STDMETHOD(Clear)(THIS_ DWORD, CONST D3DRECT*, DWORD flags, D3DCOLOR color, float z, DWORD stencil) override
 	{
+		if ((flags & 1) && !B.curTarget)
+			B.frameClearAlpha = ((color >> 24) & 255) / 255.f;
 		if (!B.ready || B.targetUnsupported || !EnsureRendering()) return D3D_OK;
 		VkClearAttachment att[3];
 		uint32_t n = 0;
@@ -2031,6 +2080,15 @@ private:
 		}
 		memcpy(u.world, m_matrix[256], 64);
 		memcpy(u.worldView, wv, 64);
+		// The water reflection clips away everything under the water surface with clip plane 0. It was ignored, so the lake
+		// bed showed in the reflection and covered the sky there, in steps along the terrain cells.
+		if ((m_renderStates[D3DRS_CLIPPLANEENABLE] & 1) && !pretransformed)
+			memcpy(u.clipPlane, m_clipPlane, sizeof(m_clipPlane));
+		else
+		{
+			u.clipPlane[0] = u.clipPlane[1] = u.clipPlane[2] = 0.0f;
+			u.clipPlane[3] = 1.0f;
+		}
 		for (int s = 0; s < 8; ++s)
 		{
 			const DWORD index = m_stageStates[s][D3DTSS_TEXCOORDINDEX];
@@ -2200,6 +2258,7 @@ private:
 	}
 
 	float m_matrix[512][16];
+	float m_clipPlane[4] = { 0.0f, 0.0f, 0.0f, 1.0f };
 	D3DMATERIAL8 m_material{};
 	D3DLIGHT8 m_light[8]{};
 	bool m_lightOn[8] = {};
@@ -2262,6 +2321,12 @@ void VkGfx_SetSceneLighting(const float ambient[3], const float diffuse[3])
 }
 void VkGfx_SetGameTime(float seconds) { g_gameTime = seconds; }
 void VkGfx_ScorchRelief(float strength) { g_scorchRelief = strength; }
+void VkGfx_InvalidateSwapchain()
+{
+	// the window was restored or resized: the next frame checks the swapchain against the surface and rebuilds it if needed
+	if (B.ready && !B.acquired && SwapchainStale())
+		DestroySwapchain();
+}
 void VkGfx_ClearDynamicLights() { g_fx.lights.clear(); g_fx.testAdded = false; }
 void VkGfx_RequestScreenshot(const char* path) { if (path) g_shotPath = path; }
 void VkGfx_AddDynamicLight(const float pos[3], const float color[3], float range)
@@ -2315,15 +2380,26 @@ IDirect3D8* WINAPI VkGfx_Direct3DCreate8(UINT)
 // through the post processing chain; the interface drawn afterwards goes straight onto the swapchain and stays sharp.
 void VkGfx_BeginScene3D(float sunX, float sunY, float sunZ)
 {
-	if (!g_sh.haveSun)
 	{
-		// One fixed sun for the whole session: azimuth from the map's light the first time, elevation fixed. GENERALS_SUN="azimuth,elevation" (degrees) overrides.
-		// random sun for every launch: any direction, 35 to 62 degrees high
-		srand((unsigned)GetTickCount() ^ (unsigned)GetCurrentProcessId() * 2654435761u);
-		float az = (float)(rand() % 3600) * 0.1f * 3.14159265f / 180.0f, el = (35.0f + (float)(rand() % 270) * 0.1f) * 3.14159265f / 180.0f;
-		(void)sunX; (void)sunY;
-		if (g_cfg.sunAzimuth >= 0.0f) { az = g_cfg.sunAzimuth * 3.14159265f / 180.0f; if (g_cfg.sunElevation >= 0.0f) el = g_cfg.sunElevation * 3.14159265f / 180.0f; }
-		if (const char* e = getenv("GENERALS_SUN")) { float a = 0, b = 0; if (sscanf(e, "%f,%f", &a, &b) == 2) { az = a * 3.14159265f / 180.0f; el = b * 3.14159265f / 180.0f; } }
+		// The sun follows the light of the map (it was random for every launch, so shadows did not match the terrain lighting).
+		// Many maps light from low angles, which would give very long and blocky shadows, so the elevation is kept at 30 to 70 degrees.
+		// Options.ini SunAzimuth / SunElevation and GENERALS_SUN="azimuth,elevation" (degrees) override it.
+		const float deg = 3.14159265f / 180.0f;
+		const float horizontal = sqrtf(sunX * sunX + sunY * sunY);
+		float az = g_sh.haveSun ? atan2f(g_sh.sun[1], g_sh.sun[0]) : 0.0f;
+		float el = g_sh.haveSun ? asinf(g_sh.sun[2]) : 50.0f * deg;
+		if (sunZ > 0.0f && horizontal > 0.001f)
+		{
+			az = atan2f(sunY, sunX);
+			el = atan2f(sunZ, horizontal);
+		}
+		else if (sunZ > 0.0f)
+			el = 70.0f * deg;
+		el = el < 30.0f * deg ? 30.0f * deg : (el > 70.0f * deg ? 70.0f * deg : el);
+		if (g_cfg.sunAzimuth >= 0.0f) az = g_cfg.sunAzimuth * deg;
+		if (g_cfg.sunElevation >= 0.0f) el = g_cfg.sunElevation * deg;
+		static const char* env = getenv("GENERALS_SUN");
+		if (env) { float a = 0, b = 0; if (sscanf(env, "%f,%f", &a, &b) == 2) { az = a * deg; el = b * deg; } }
 		g_sh.sun[0] = cosf(el) * cosf(az); g_sh.sun[1] = cosf(el) * sinf(az); g_sh.sun[2] = sinf(el);
 		g_sh.haveSun = true;
 	}
@@ -2361,6 +2437,7 @@ void VkGfx_EndScene3D() {}
 void VkGfx_SetSceneLighting(const float*, const float*) {}
 void VkGfx_SetGameTime(float) {}
 void VkGfx_ScorchRelief(float) {}
+void VkGfx_InvalidateSwapchain() {}
 void VkGfx_ClearDynamicLights() {}
 void VkGfx_RequestScreenshot(const char*) {}
 void VkGfx_AddDynamicLight(const float*, const float*, float) {}

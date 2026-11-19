@@ -42,7 +42,10 @@ layout(std140, set = 0, binding = 0) uniform Draw
 	vec4 camPos;           // xyz: camera in world space, w: strength of the per pixel highlight (0 = lighting stays per vertex)
 	vec4 relief;           // scorch marks: x strength of the relief lighting (0 = off), y crater depth as a part of the radius, zw: texel size of the height map
 	vec4 reliefSun;        // xyz: direction towards the sun, w: ambient part of the light
+	vec4 clipPlane;        // user clip plane 0 in world space; 0,0,0,1 keeps everything
 } draw;
+
+out float gl_ClipDistance[1];
 
 layout(location = 0) out vec4 vDiffuse;
 layout(location = 1) out vec4 vUv[8];
@@ -117,6 +120,7 @@ void main()
 	vWorldPos = vec4(0.0);
 	vWorldNormal = vec3(0.0, 0.0, 1.0);
 	vRawDiffuse = inDiffuse;
+	gl_ClipDistance[0] = 1.0;
 	for (uint i = 0u; i < 8u; ++i)
 		vUv[i] = stageCoordinates(i);
 
@@ -136,6 +140,7 @@ void main()
 		p.y = -p.y;     // Direct3D clip space has y up, Vulkan's points down
 		p.xy += vec2(1.0 / draw.viewport.z, 1.0 / draw.viewport.w) * p.w;
 		gl_Position = p;
+		gl_ClipDistance[0] = dot(draw.clipPlane, vec4((draw.world * vec4(inPos.xyz, 1.0)).xyz, 1.0));
 		float size = draw.pointParams.x;
 		if (draw.pointScale.w != 0.0)
 		{

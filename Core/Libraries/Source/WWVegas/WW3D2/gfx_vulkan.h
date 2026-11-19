@@ -10,7 +10,7 @@ struct VkGfx_Settings
 	bool classic = false;			// GraphicsMode = classic: original rendering through Direct3D 8 / DXVK
 	bool postProcessing = true;		// bloom, colour grading, ambient occlusion
 	bool bloom = true, ambientOcclusion = true, fxaa = true, softShadows = true;
-	float sunAzimuth = -1.0f, sunElevation = -1.0f;		// degrees; negative = random for every launch
+	float sunAzimuth = -1.0f, sunElevation = -1.0f;		// degrees; negative = from the light of the map
 	// volumetric clouds (Options.ini keys Clouds, CloudShadows, CloudBase, CloudThickness, CloudCoverage, CloudDensity, CloudSpeed, CloudShadowStrength)
 	bool clouds = false;				// visible clouds (off by default: cloud shadows are always on) when the camera is above the cloud layer
 	bool cloudShadows = true;		// moving cloud shadows on the ground (replace the game's cloud texture)
@@ -46,5 +46,6 @@ void VkGfx_SetSceneLighting(const float ambient[3], const float diffuse[3]);		//
 void VkGfx_ScorchRelief(float strength);		// the following draws are scorch marks: stage 1 holds their height map and they are lit as shallow craters (0 = off)
 void VkGfx_SetGameTime(float seconds);		// game time: the clouds drift with it (the same moment of a game always looks the same)
 void VkGfx_RequestScreenshot(const char* bmpPath);		// the next presented frame is saved as a BMP
+void VkGfx_InvalidateSwapchain();		// the window was restored or resized: rebuild the swapchain if it no longer fits
 void VkGfx_ClearDynamicLights();		// the lights of the frame are collected by the scene right before it is drawn
 void VkGfx_AddDynamicLight(const float pos[3], const float color[3], float range);

@@ -84,6 +84,7 @@ enum
 #include "WW3D2/camera.h"
 #include "WW3D2/dx8wrapper.h"
 #include "WW3D2/dx8renderer.h"
+#include "WW3D2/gfx_vulkan.h"
 #include "WW3D2/matinfo.h"
 #include "WW3D2/mesh.h"
 #include "WW3D2/meshmdl.h"
@@ -1018,9 +1019,12 @@ W3DTreeBuffer::~W3DTreeBuffer()
 /** Constructor. Sets m_initialized to true if it finds the w3d models it needs
 for the trees. */
 //=============================================================================
+Bool W3DTreeBuffer::s_mirrorPass = false;
+
 W3DTreeBuffer::W3DTreeBuffer()
 {
 	m_initialized = false;
+	m_cullTransformValid = false;
 	Int i;
 	for	(i=0; i<MAX_BUFFERS; i++) {
 		m_vertexTree[i] = nullptr;
@@ -1499,14 +1503,26 @@ void W3DTreeBuffer::drawTrees(CameraClass * camera, RefRenderObjListIterator *pD
 	if (m_treeTexture==nullptr) {
 		return;
 	}
-	if (m_updateAllKeys) {
-		cull(camera);
+	// The updated water draws the scene a second time from a mirrored camera for its reflection. The culling and the sort
+	// keys belong to the main camera: the mirror pass draws the trees the main view sees, and the main view culls again
+	// whenever its camera moved. Before, a cull done in the mirror pass stayed for the main view, so trees popped in while
+	// scrolling and vanished when zooming in.
+	if (!s_mirrorPass) {
+		const Matrix3D &cameraTransform = camera->Get_Transform();
+		if (!m_cullTransformValid || memcmp(&cameraTransform, &m_cullTransform, sizeof(Matrix3D)) != 0) {
+			m_cullTransform = cameraTransform;
+			m_cullTransformValid = true;
+			m_updateAllKeys = true;
+		}
+		if (m_updateAllKeys) {
+			cull(camera);
+		}
 	}
 
 	Int curTree;
 	// Draw tree shadows.
-	// The round blob decals under trees are not drawn any more; real shadows replace them.
-	if (false && m_shadow && TheW3DProjectedShadowManager && TheGlobalData->m_useShadowDecals) {
+	// The round blob decals under trees are only drawn when the Vulkan shadow map does not replace them.
+	if (!VkGfx_ShadowMapsActive() && m_shadow && TheW3DProjectedShadowManager && TheGlobalData->m_useShadowDecals) {
 		for (curTree=0; curTree<m_numTrees; curTree++) {
 			Int type = m_trees[curTree].treeType;
 			if (type<0) {

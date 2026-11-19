@@ -35,6 +35,7 @@
 #include "W3DDevice/GameClient/W3DWater.h"
 #include "W3DDevice/GameClient/HeightMap.h"
 #include "W3DDevice/GameClient/W3DShroud.h"
+#include "W3DDevice/GameClient/W3DTreeBuffer.h"
 #include "W3DDevice/GameClient/W3DWaterTracks.h"
 #include "W3DDevice/GameClient/W3DAssetManager.h"
 #include "WW3D2/texture.h"
@@ -1618,7 +1619,9 @@ void WaterRenderObjClass::renderMirror(CameraClass *cam)
 	if (m_tod == TIME_OF_DAY_NIGHT)
 		renderSkyBody(&reflectedTransform);
 
+	W3DTreeBuffer::setMirrorPass(true);
 	WW3D::Render(m_parentScene,cam);
+	W3DTreeBuffer::setMirrorPass(false);
 
 	if (modernMirror)
 		DX8Wrapper::Set_DX8_Render_State(GFX_RS_CLIPPLANEENABLE, 0);

@@ -984,7 +984,9 @@ void PointGroupClass::Render(RenderInfoClass &rinfo)
 		DX8Wrapper::Set_Index_Buffer (indexbuffer, 0);
 		DX8Wrapper::Set_Vertex_Buffer (PointVerts);
 
-		VkGfx_SoftDraws(true);		// particles: faded near geometry by the native Vulkan renderer
+		// Particles facing the camera fade near geometry with the native Vulkan renderer. Ground aligned ones (radiation and
+		// toxin pools, shock wave rings, water ripples) lie about a unit above the ground and faded out completely, so they stay hard.
+		VkGfx_SoftDraws(Billboard);
 		if ( sort )
 		{
 				SortingRendererClass::Insert_Triangles (0, delta / verticesperprimitive, 0, delta);
@@ -1918,7 +1920,7 @@ void PointGroupClass::RenderVolumeParticle(RenderInfoClass &rinfo, unsigned int 
 			/// @todo lorenzen sez: precompute these params, above
 
 
-			VkGfx_SoftDraws(true);
+			VkGfx_SoftDraws(Billboard);	// see Render()
 			if ( sort )
 					SortingRendererClass::Insert_Triangles (0, delta / verticesperprimitive, 0, delta);
 			else

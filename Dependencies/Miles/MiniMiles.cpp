@@ -832,6 +832,9 @@ S32 __stdcall AIL_set_sample_file(HSAMPLE sample, const void* file_image, S32)
 		return 0;
 	Lock l;
 	v->image = file_image;
+	// Like Miles, a new file plays at its own rate. The engine sets the pitch shift of 2D samples before it loads the
+	// file, so that rate was based on the 22050 Hz default and an 11025 Hz voice played twice as fast.
+	v->rateOverride = 0;
 	return prepare(v, file_image, w.imageSize) ? 1 : 0;
 }
 
@@ -843,6 +846,7 @@ S32 __stdcall AIL_set_3D_sample_file(H3DSAMPLE sample, const void* file_image)
 		return 0;
 	Lock l;
 	v->image = file_image;
+	v->rateOverride = 0;
 	return prepare(v, file_image, w.imageSize) ? 1 : 0;
 }
 

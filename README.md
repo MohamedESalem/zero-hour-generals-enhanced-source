@@ -15,6 +15,10 @@ and more. Everything is **on by default**, and one setting (`GraphicsMode = clas
 > results; they did not write or engineer any of it. The underlying game code and its fixes come from the community project
 > and EA's original release, see [Licenses and credits](#licenses-and-credits).
 
+> **This version:** continued by **dement123** (Nexus Mods): gameplay and economy changes, hard skirmish AI, deterministic
+> parallel pathfinding, AI and engine bug fixes, and fixes for the Vulkan port (frame timing, sound, ground effects). The
+> code was written with Claude Code; dement123 directed and tested it.
+
 > **One-time project: no support, no updates.**
 > This was done once, as a personal experiment. It will **not** be troubleshot, answered in issues, or kept up to date with
 > upstream or with new tools. Fork it, change it, take pieces of it, do what you like within the license. Treat it as a
@@ -172,8 +176,8 @@ Locations are given under [Running](#running). The game rewrites the file when i
 | `AmbientOcclusion` | `yes` | `no` = no contact darkening. |
 | `Bloom` | `yes` | `no` = no glow. |
 | `AntiAliasingFXAA` | `yes` | `no` = no edge smoothing. |
-| `SunAzimuth` | random | Compass direction of the sun in degrees (0 to 360). With no value the sun is random on every launch. |
-| `SunElevation` | random | Sun height in degrees (about 10 low and long shadows, 80 almost overhead). Only used together with `SunAzimuth`; without it the elevation is random between 35 and 62. |
+| `SunAzimuth` | map | Compass direction of the sun in degrees (0 to 360). With no value the sun comes from the light of the map. |
+| `SunElevation` | map | Sun height in degrees (about 10 low and long shadows, 80 almost overhead). With no value it comes from the light of the map, kept between 30 and 70. |
 | `ShadowQuality` | `medium` | `high` (4096 shadow map), `medium` (2048 map) or `low` (2048 map and fewer filter taps). Costs about 1 ms per step at 2560x1440 on the test machine, with hardly any visible difference. |
 | `AmbientOcclusionQuality` | `half` | `half` renders the ambient occlusion at half resolution (about 0.8 ms cheaper), `full` at full resolution. |
 | `DynamicLights` | `yes` | Explosions, impacts and other light pulses light the ground and units around them, wash out the sun's shadows nearby, and the strongest one casts shadows of its own. |
@@ -208,7 +212,7 @@ game itself, so use the main menu.
 | `ScorchRelief` | `yes` | `no` = the new scorch marks without the crater lighting (needs the height map `Art\Textures\exscorch01_h.dds` from the zip, otherwise it is off anyway). |
 | `ScorchReliefStrength` | `1.0` | Strength of the crater lighting (0 = off). |
 | `IntroTimer` | `no` | `yes` = show the game clock in the main menu scene (to tell when something happens in it). |
-| `Resolution` | game default | Use a resolution your display really supports at fullscreen. |
+| `Resolution` | desktop | Without a value the game starts at the desktop resolution of the primary monitor (Full HD if it cannot be read). Use a resolution your display really supports at fullscreen. |
 
 ### Environment variables (override Options.ini; mostly for development)
 
@@ -243,6 +247,8 @@ game itself, so use the main menu.
 |---|---|
 | `-win` | windowed mode |
 | `-xres N -yres N` | resolution |
+| `-noFog` | whole map visible, no shroud and no fog of war (drawing only; Options.ini `FogOfWar = no` does the same) |
+| `-maxZoom N` | zoom-out limit (camera height), wins over Options.ini `MaxCameraHeight` |
 | `-useCwd` | keep the current folder as working directory (*needed by this port*, set by the launchers) |
 | `-file <map path>` | start a map directly as a single player game, for example `-file "Maps\Alpine Assault\Alpine Assault.map"` |
 | `-mod <folder or .big>` | load an extra archive/folder that overrides the game's data (upstream) |
@@ -297,8 +303,8 @@ visible area and snapped to its texel grid so shadows do not shimmer when the ca
 world position of every pixel from the scene depth and the real 3D viewport, searches the map for blockers, estimates the
 distance to the nearest blocker and filters over a width that grows with it (percentage-closer soft shadows). That is why a
 shadow is crisp at the foot of a tree or unit and fades out along its length. The engine's stencil volumes, projected decals
-and the round blob under trees are not drawn on this renderer (decals such as range circles still are). The sun angle is chosen randomly at start-up (see
-`SunAzimuth` / `SunElevation`).
+and the round blob under trees are not drawn on this renderer (decals such as range circles still are). The sun follows the light of the map, its height kept
+between 30 and 70 degrees (see `SunAzimuth` / `SunElevation`).
 
 ### Dynamic lights
 
@@ -510,6 +516,8 @@ Generals/, GeneralsMD/         the two games' code (base game and Zero Hour)
 - **Who did the work here:** Claude Code (Anthropic) wrote the changes, scripts, shaders, patches and documentation in this
   repository; the repository owner only supplied prompts and testing feedback. Mistakes in it are this project's own, not the
   upstream authors'.
+- **This version:** dement123 (Nexus Mods) continued the 64-bit Vulkan fork with gameplay changes, the hard skirmish AI,
+  deterministic pathfinding and bug fixes, written with Claude Code.
 - The game code is licensed under **GPL v3 with EA's additional terms**, see [LICENSE.md](LICENSE.md). The changes in this
   repository are released under the same license.
 - Upstream: the [TheSuperHackers/GeneralsGameCode](https://github.com/TheSuperHackers/GeneralsGameCode) contributors. If you

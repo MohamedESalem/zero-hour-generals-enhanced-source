@@ -30,6 +30,7 @@
 
 #include "Common/GameMemory.h"
 #include "WW3D2/dx8wrapper.h"
+#include "WW3D2/gfx_vulkan.h"
 #include "WW3D2/rendobj.h"
 #include "WW3D2/hanim.h"
 #include "WW3D2/camera.h"
@@ -334,6 +335,12 @@ void W3DMouse::init()
 
 	//check if system already initialized and texture assets loaded.
 	Win32Mouse::init();
+
+	// The native Vulkan renderer has no hardware cursor (RM_DX8) and the 3D cursor model was not visible there: use the Windows cursors,
+	// which the system draws on top of the window independent of the renderer and the frame rate.
+	if (VkGfx_NativeActive() && m_currentRedrawMode != RM_WINDOWS)
+		m_currentRedrawMode = RM_WINDOWS;
+
 	setCursor(ARROW);	//set default starting cursor image
 
 	WWASSERT(!thread.Is_Running());

@@ -293,13 +293,15 @@ bool AcquireSwap()
 {
 	if (B.acquired)
 		return true;
+	if (SwapchainStale())
+		DestroySwapchain();
 	for (int attempt = 0; attempt < 3; ++attempt)
 	{
 		if (B.swapchain == VK_NULL_HANDLE && !CreateSwapchain())
 			return false;
 		VkResult r = vkAcquireNextImageKHR(B.device, B.swapchain, UINT64_MAX, B.imageAvailable, VK_NULL_HANDLE, &B.imageIndex);
 		if (r == VK_SUCCESS || r == VK_SUBOPTIMAL_KHR) { B.acquired = true; return true; }
-		if (r == VK_ERROR_OUT_OF_DATE_KHR) { DestroySwapchain(); continue; }
+		if (r == VK_ERROR_OUT_OF_DATE_KHR || r == VK_ERROR_SURFACE_LOST_KHR) { DestroySwapchain(); continue; }
 		Log("vkAcquireNextImageKHR failed: %d", (int)r);
 		return false;
 	}

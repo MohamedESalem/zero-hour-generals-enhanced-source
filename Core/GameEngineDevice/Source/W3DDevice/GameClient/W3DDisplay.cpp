@@ -107,6 +107,10 @@ static void drawFramerateBar();
 
 #include "GameLogic/ScriptEngine.h"		// For TheScriptEngine - jkmcd
 #include "GameLogic/GameLogic.h"
+#include "GameLogic/Object.h"
+#include "GameLogic/PolygonTrigger.h"
+#include <algorithm>
+#include <string>
 #ifdef DUMP_PERF_STATS
 #include "GameLogic/PartitionManager.h"
 #endif
@@ -875,6 +879,18 @@ void W3DDisplay::init()
 			{
 			case 0:
 			{
+				// A resolution larger than the desktop (an Options.ini from a bigger screen) is reduced to the desktop size instead of failing
+				// and ending up in the 800x600 fallback below.
+				{
+					const Int desktopW = ::GetSystemMetrics( SM_CXSCREEN );
+					const Int desktopH = ::GetSystemMetrics( SM_CYSCREEN );
+					if (desktopW >= DEFAULT_DISPLAY_WIDTH && desktopH >= DEFAULT_DISPLAY_HEIGHT &&
+						(TheGlobalData->m_xResolution > desktopW || TheGlobalData->m_yResolution > desktopH))
+					{
+						TheWritableGlobalData->m_xResolution = desktopW;
+						TheWritableGlobalData->m_yResolution = desktopH;
+					}
+				}
 				// set our default width and height and bit depth
 				setWidth( TheGlobalData->m_xResolution );
 				setHeight( TheGlobalData->m_yResolution );
@@ -899,11 +915,23 @@ void W3DDisplay::init()
 				Int bitDepth = DEFAULT_DISPLAY_BIT_DEPTH;
 				Int displayModeCount = getDisplayModeCount();
 				Int displayModeIndex = 0;
-				for (; displayModeIndex < displayModeCount; ++displayModeIndex)
+				// The largest mode that fits the desktop, not the first one that is good enough (that is 800x600 in an ascending list).
 				{
-					getDisplayModeDescription(displayModeIndex, &xres, &yres, &bitDepth);
-					if (xres * yres >= DEFAULT_DISPLAY_WIDTH * DEFAULT_DISPLAY_HEIGHT)
-						break; // Is good enough. Use it.
+					const Int desktopW = ::GetSystemMetrics( SM_CXSCREEN );
+					const Int desktopH = ::GetSystemMetrics( SM_CYSCREEN );
+					Int bestArea = 0, bestX = xres, bestY = yres, bestDepth = bitDepth;
+					for (; displayModeIndex < displayModeCount; ++displayModeIndex)
+					{
+						Int x, y, depth;
+						getDisplayModeDescription(displayModeIndex, &x, &y, &depth);
+						const Int area = x * y;
+						if (area >= DEFAULT_DISPLAY_WIDTH * DEFAULT_DISPLAY_HEIGHT && x <= desktopW && y <= desktopH && area > bestArea &&
+							depth >= bestDepth)
+						{
+							bestArea = area; bestX = x; bestY = y; bestDepth = depth;
+						}
+					}
+					xres = bestX; yres = bestY; bitDepth = bestDepth;
 				}
 				TheWritableGlobalData->m_xResolution = xres;
 				TheWritableGlobalData->m_yResolution = yres;
@@ -1872,27 +1900,162 @@ void W3DDisplay::step()
 /** Draw the entire W3D Display */
 //=============================================================================
 //DECLARE_PERF_TIMER(W3DDisplay_draw)
-// Timed screenshots for comparing renderers: GENERALS_SHOTS="2,4,6" (seconds of game time, 30 logic frames each), GENERALS_SHOTDIR, GENERALS_SHOTTAG
+// Timed screenshots for comparing renderers: GENERALS_SHOTS="2,4,6" (seconds of game time, 30 logic frames each), GENERALS_SHOTDIR, GENERALS_SHOTTAG.
+// GENERALS_SHOTVIEW="300,120,60" sets the camera height above the ground half a second before each shot (0 = leave it).
+static void parseNumberList( const char *e, std::vector<Real> &out )
+{
+	for (const char *p = e; p && *p; )
+	{
+		out.push_back( (Real)atof( p ) );
+		const char *c = strchr( p, ',' );
+		if (!c) break;
+		p = c + 1;
+	}
+}
+
+// GENERALS_SHOTCAM="battle,unit,building2,civ,-" aims the camera of each timed screenshot (one entry per shot, - = leave it):
+// battle = where the most units are firing, unitN = follows the N-th most expensive living vehicle, buildingN = the N-th
+// biggest player structure, civN = the N-th biggest neutral (civilian) structure. GENERALS_SHOTANGLE="45,-30" turns the camera.
+static void aimTimedScreenshot( const char *mode )
+{
+	if (!TheGameLogic || !TheTacticalView || !ThePlayerList || !mode || mode[0] == '-' || mode[0] == 0)
+		return;
+	char kind[16] = { 0 };
+	Int rank = 1;
+	sscanf( mode, "%15[a-z]%d", kind, &rank );
+	if (rank < 1)
+		rank = 1;
+	TheTacticalView->setCameraLock( INVALID_ID );
+
+	if (strcmp( kind, "battle" ) == 0)
+	{
+		std::vector<const Object *> firing;
+		for (Object *obj = TheGameLogic->getFirstObject(); obj; obj = obj->getNextObject())
+			if (!obj->isEffectivelyDead() && obj->testStatus( OBJECT_STATUS_IS_FIRING_WEAPON ))
+				firing.push_back( obj );
+		const Real radiusSqr = 260.0f * 260.0f;
+		size_t best = 0;
+		Int bestCount = 0;
+		for (size_t i = 0; i < firing.size(); ++i)
+		{
+			Int count = 0;
+			for (size_t j = 0; j < firing.size(); ++j)
+			{
+				const Real dx = firing[i]->getPosition()->x - firing[j]->getPosition()->x;
+				const Real dy = firing[i]->getPosition()->y - firing[j]->getPosition()->y;
+				count += (dx * dx + dy * dy < radiusSqr) ? 1 : 0;
+			}
+			if (count > bestCount) { bestCount = count; best = i; }
+		}
+		if (bestCount == 0)
+			return;
+		Coord3D center = { 0.0f, 0.0f, 0.0f };
+		for (size_t j = 0; j < firing.size(); ++j)
+		{
+			const Real dx = firing[best]->getPosition()->x - firing[j]->getPosition()->x;
+			const Real dy = firing[best]->getPosition()->y - firing[j]->getPosition()->y;
+			if (dx * dx + dy * dy < radiusSqr)
+			{
+				center.x += firing[j]->getPosition()->x / bestCount;
+				center.y += firing[j]->getPosition()->y / bestCount;
+				center.z += firing[j]->getPosition()->z / bestCount;
+			}
+		}
+		TheTacticalView->lookAt( &center );
+		return;
+	}
+
+	const Player *neutral = ThePlayerList->getNeutralPlayer();
+	std::vector< std::pair<Real, Object *> > candidates;
+	for (Object *obj = TheGameLogic->getFirstObject(); obj; obj = obj->getNextObject())
+	{
+		if (obj->isEffectivelyDead() || obj->testStatus( OBJECT_STATUS_UNDER_CONSTRUCTION ))
+			continue;
+		const Bool isNeutral = obj->getControllingPlayer() == neutral;
+		if (strcmp( kind, "unit" ) == 0 && !isNeutral && obj->isKindOf( KINDOF_VEHICLE ) && !obj->isKindOf( KINDOF_AIRCRAFT ))
+			candidates.push_back( std::make_pair( (Real)obj->getTemplate()->friend_getBuildCost(), obj ) );
+		else if (strcmp( kind, "building" ) == 0 && !isNeutral && obj->isKindOf( KINDOF_STRUCTURE ))
+			candidates.push_back( std::make_pair( obj->getGeometryInfo().getBoundingCircleRadius(), obj ) );
+		else if (strcmp( kind, "civ" ) == 0 && isNeutral && obj->isKindOf( KINDOF_STRUCTURE ))
+			candidates.push_back( std::make_pair( obj->getGeometryInfo().getBoundingCircleRadius(), obj ) );
+	}
+	if ((Int)candidates.size() < rank)
+		return;
+	std::stable_sort( candidates.begin(), candidates.end(),
+		[]( const std::pair<Real, Object *> &a, const std::pair<Real, Object *> &b ) { return a.first > b.first; } );
+	Object *target = candidates[rank - 1].second;
+	TheTacticalView->lookAt( target->getPosition() );
+	if (strcmp( kind, "unit" ) == 0)
+		TheTacticalView->setCameraLock( target->getID() );
+}
+
 static Bool timedScreenshotDue( char *path, size_t size )
 {
 	static std::vector<UnsignedInt> frames;
+	static std::vector<Real> heights;
+	static std::vector<Real> angles;
+	static std::vector<std::string> cams;
 	static size_t next = 0;
+	static size_t viewSet = (size_t)-1;
 	static Bool parsed = FALSE;
 	if (!parsed)
 	{
 		parsed = TRUE;
-		if (const char *e = getenv( "GENERALS_SHOTS" ))
+		std::vector<Real> seconds;
+		parseNumberList( getenv( "GENERALS_SHOTS" ), seconds );
+		for (size_t i = 0; i < seconds.size(); ++i)
+			frames.push_back( (UnsignedInt)(seconds[i] * 30.0f + 0.5f) );
+		parseNumberList( getenv( "GENERALS_SHOTVIEW" ), heights );
+		parseNumberList( getenv( "GENERALS_SHOTANGLE" ), angles );
+		if (const char *c = getenv( "GENERALS_SHOTCAM" ))
 		{
-			for (const char *p = e; *p; )
+			std::string list( c );
+			size_t start = 0;
+			while (start <= list.size())
 			{
-				frames.push_back( (UnsignedInt)(atof( p ) * 30.0 + 0.5) );
-				const char *c = strchr( p, ',' );
-				if (!c) break;
-				p = c + 1;
+				const size_t end = list.find( ',', start );
+				cams.push_back( list.substr( start, end == std::string::npos ? std::string::npos : end - start ) );
+				if (end == std::string::npos)
+					break;
+				start = end + 1;
 			}
 		}
 	}
-	if (next >= frames.size() || !TheGameLogic || TheGameLogic->getFrame() < frames[next])
+	if (next >= frames.size() || !TheGameLogic)
+		return FALSE;
+	if (viewSet != next && TheTacticalView && TheGameLogic->getFrame() + 15 >= frames[next])
+	{
+		viewSet = next;
+		// GENERALS_SHOTWATER=n looks at the middle of the n-th water area of the map (counted from 1)
+		if (const char *w = getenv( "GENERALS_SHOTWATER" ))
+		{
+			Int wanted = atoi( w ), index = 0;
+			for (PolygonTrigger *trig = PolygonTrigger::getFirstPolygonTrigger(); trig; trig = trig->getNext())
+			{
+				if (!trig->isWaterArea() || trig->getNumPoints() < 3 || ++index != wanted)
+					continue;
+				Coord3D center = { 0.0f, 0.0f, 0.0f };
+				for (Int i = 0; i < trig->getNumPoints(); ++i)
+				{
+					center.x += trig->getPoint( i )->x;
+					center.y += trig->getPoint( i )->y;
+					center.z += trig->getPoint( i )->z;
+				}
+				center.x /= trig->getNumPoints();
+				center.y /= trig->getNumPoints();
+				center.z /= trig->getNumPoints();
+				TheTacticalView->lookAt( &center );
+				break;
+			}
+		}
+		if (next < cams.size())
+			aimTimedScreenshot( cams[next].c_str() );
+		if (next < angles.size())
+			TheTacticalView->setAngle( DEG_TO_RADF( angles[next] ) );
+		if (next < heights.size() && heights[next] > 0.0f)
+			TheTacticalView->setHeightAboveGround( heights[next] );
+	}
+	if (TheGameLogic->getFrame() < frames[next])
 		return FALSE;
 	const char *dir = getenv( "GENERALS_SHOTDIR" ), *tag = getenv( "GENERALS_SHOTTAG" );
 	snprintf( path, size, "%s/%s_%04u.bmp", dir ? dir : ".", tag ? tag : "shot", (unsigned)frames[next] );
@@ -1905,8 +2068,16 @@ void W3DDisplay::draw()
 	//USE_PERF_TIMER(W3DDisplay_draw)
 
 	extern HWND ApplicationHWnd;
+	static Bool s_wasIconic = FALSE;
 	if (ApplicationHWnd && ::IsIconic(ApplicationHWnd)) {
+		s_wasIconic = TRUE;
 		return;
+	}
+	if (s_wasIconic) {
+		// back from minimise / Alt+Tab: make sure the Vulkan swapchain matches the restored window (black screen otherwise)
+		s_wasIconic = FALSE;
+		if (VkGfx_NativeActive())
+			VkGfx_InvalidateSwapchain();
 	}
 
 	if (TheGlobalData->m_headless)
