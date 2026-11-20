@@ -243,6 +243,7 @@ set(GAMEENGINE_SRC
 #    Include/GameLogic/CrateSystem.h
     Include/GameLogic/ConquestManager.h
     Include/GameLogic/WorldWrapManager.h
+    Include/GameLogic/AircraftRange.h
 #    Include/GameLogic/Damage.h
     Include/GameLogic/ExperienceTracker.h
     Include/GameLogic/FiringTracker.h
@@ -1087,6 +1088,7 @@ set(GAMEENGINE_SRC
 #    Source/GameLogic/System/CrateSystem.cpp
     Source/GameLogic/System/ConquestManager.cpp
     Source/GameLogic/System/WorldWrapManager.cpp
+    Source/GameLogic/System/AircraftRange.cpp
 #    Source/GameLogic/System/Damage.cpp
     Source/GameLogic/System/GameLogic.cpp
 #    Source/GameLogic/System/GameLogicDispatch.cpp

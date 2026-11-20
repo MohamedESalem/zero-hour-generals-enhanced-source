@@ -64,6 +64,7 @@ extern "C" IMAGE_DOS_HEADER __ImageBase;	// for -replayTraceObject
 #include "GameLogic/Module/ProneUpdate.h"
 #include "GameLogic/Module/DeliverPayloadAIUpdate.h"
 #include "GameLogic/Module/HackInternetAIUpdate.h"
+#include "GameLogic/AircraftRange.h"
 #include "GameLogic/Module/HordeUpdate.h"
 #include "GameLogic/Object.h"
 #include "GameLogic/PartitionManager.h"
@@ -2741,6 +2742,10 @@ void AIUpdateInterface::aiDoCommand(const AICommandParms* parms)
 	// These variables could relate to a deleted object when a pending command is reconstituted.
 
 	if (!isAllowedToRespondToAiCommands(parms))
+		return;
+
+	// TheSuperHackers @feature mohamed 20/11/2026 aircraft range: an order beyond the red ring is dropped.
+	if (TheAircraftRange && !TheAircraftRange->filterCommand(getObject(), parms))
 		return;
 
 #ifdef ALLOW_SURRENDER

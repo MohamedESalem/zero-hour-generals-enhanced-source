@@ -52,6 +52,7 @@
 #include "GameClient/InGameUI.h"
 #include "GameClient/ParticleSys.h"
 #include "GameClient/TerrainVisual.h"
+#include "GameLogic/AircraftRange.h"
 #include "GameLogic/GameLogic.h"
 #include "GameLogic/GhostObject.h"
 #include "GameLogic/PartitionManager.h"
@@ -324,6 +325,9 @@ void GameState::init()
 	addSnapshotBlock( "CHUNK_ParticleSystem",					TheParticleSystemManager,	SNAPSHOT_SAVELOAD );
 	addSnapshotBlock( "CHUNK_TerrainVisual",					TheTerrainVisual,					SNAPSHOT_SAVELOAD );
 	addSnapshotBlock( "CHUNK_GhostObject",						TheGhostObjectManager,		SNAPSHOT_SAVELOAD );
+	// TheSuperHackers @feature mohamed 20/11/2026 aircraft homes and one-way flights; older saves lack it (then it starts empty).
+	if( TheAircraftRange )
+		addSnapshotBlock( "CHUNK_AircraftRange", TheAircraftRange, SNAPSHOT_SAVELOAD );
 
 	// add all the snapshot objects to our list of data blocks for deep CRCs of logic
 	addSnapshotBlock( "CHUNK_TeamFactory",						TheTeamFactory,						SNAPSHOT_DEEPCRC_LOGICONLY );

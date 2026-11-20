@@ -683,6 +683,15 @@ Int parseCameraStart(char *args[], int num)
 	return 1;
 }
 
+#if RTS_ZEROHOUR
+// TheSuperHackers @feature mohamed 20/11/2026 -noAircraftRange: no realistic aircraft range on world maps (AircraftRange.h).
+Int parseNoAircraftRange(char *args[], int num)
+{
+	TheWritableGlobalData->m_aircraftRangeDisabled = TRUE;
+	return 1;
+}
+#endif
+
 // TheSuperHackers @feature mohamed 17/11/2026 No borders / city names over the tactical view.
 Int parseNoWorldOverlay(char *args[], int num)
 {
@@ -1458,6 +1467,7 @@ static CommandLineParam paramsForEngineInit[] =
 	{ "-unitScale", parseUnitScale },
 #if RTS_ZEROHOUR
 	{ "-civilianScale", parseCivilianScale },
+	{ "-noAircraftRange", parseNoAircraftRange },
 #endif
 	{ "-noWorldOverlay", parseNoWorldOverlay },
 	{ "-overlayDetailHeight", parseOverlayDetailHeight },

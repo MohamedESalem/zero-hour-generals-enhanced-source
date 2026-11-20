@@ -934,6 +934,7 @@ GlobalData::GlobalData()
 	// Both are overridable via the INI keys registered in s_GlobalDataFieldParseTable.
 	m_maxCameraHeightMultiplier = 4.0f;
 	m_unitVisualScale = 1.0f;
+	m_aircraftRangeDisabled = FALSE;
 	m_civilianStructureScale = 1.0f;
 	// World scaling: 0 = "not given on the command line". WorldScale::resolveFromGlobalData()
 	// turns these into the effective values (1.0 when nothing was requested = retail behaviour).

@@ -126,6 +126,9 @@ public:
 	void friend_addWaypointToGoalPath( const Coord3D &pos );
 	AICommandType friend_getPendingCommandType() const;
 	void friend_purgePendingCommand();
+	// TheSuperHackers @feature mohamed 20/11/2026 aircraft range (GameLogic/AircraftRange.h)
+	void friend_returnToBaseForRange();
+	Bool friend_isReturningToBase() const;
 
 protected:
 

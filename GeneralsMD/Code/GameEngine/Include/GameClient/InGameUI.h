@@ -712,6 +712,7 @@ protected:
 	void drawConquestOverlay();						///< Conquest mode: territory names and the territory count
 	void clearConquestOverlay();					///< free the strings of the conquest overlay
 	void drawWorldOverlay();						///< World maps: border lines and city names (GameClient/WorldOverlay.h)
+	void drawAircraftRange();						///< World maps: range rings of the selected aircraft (GameLogic/AircraftRange.h)
 	void clearWorldOverlay();						///< forget the overlay data and free its strings
 
 	void clearWorldAnimations();					///< delete all world animations

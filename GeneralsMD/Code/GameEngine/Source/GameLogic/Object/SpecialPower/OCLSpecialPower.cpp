@@ -34,6 +34,7 @@
 #include "Common/RandomValue.h"
 #include "Common/ThingFactory.h"
 #include "Common/Xfer.h"
+#include "GameLogic/AircraftRange.h"
 #include "GameLogic/Object.h"
 #include "GameLogic/ObjectCreationList.h"
 #include "GameLogic/PartitionManager.h"
@@ -155,6 +156,11 @@ void OCLSpecialPower::doSpecialPowerAtLocation( const Coord3D *loc, Real angle, 
 	if( loc == nullptr )
 		return;
 
+	// TheSuperHackers @feature mohamed 20/11/2026 aircraft range: a target beyond the power's range is refused
+	// before anything is spent (the power stays ready).
+	if( TheAircraftRange && !TheAircraftRange->allowSpecialPower( getObject(), getSpecialPowerTemplate(), loc ) )
+		return;
+
 	// get the module data
 	const OCLSpecialPowerModuleData *modData = getOCLSpecialPowerModuleData();
 
@@ -187,6 +193,16 @@ void OCLSpecialPower::doSpecialPowerAtLocation( const Coord3D *loc, Real angle, 
 
 	// at what point will the "deliverer" come in
 	Coord3D creationCoord;
+	// TheSuperHackers @feature mohamed 20/11/2026 aircraft range: a ranged power's plane starts over the building
+	// that calls it, not at the map edge (thousands of km away on a world map).
+	if( TheAircraftRange && TheAircraftRange->getPowerRange( getSpecialPowerTemplate() ) > 0.0f &&
+		( modData->m_createLoc == CREATE_AT_EDGE_NEAR_SOURCE || modData->m_createLoc == CREATE_AT_EDGE_NEAR_TARGET ||
+			modData->m_createLoc == CREATE_AT_EDGE_FARTHEST_FROM_TARGET ) )
+	{
+		creationCoord = *getObject()->getPosition();
+		ObjectCreationList::create( ocl, getObject(), &creationCoord, &targetCoord, angle );
+		return;
+	}
 	switch (modData->m_createLoc)
 	{
 		case CREATE_AT_EDGE_NEAR_SOURCE:

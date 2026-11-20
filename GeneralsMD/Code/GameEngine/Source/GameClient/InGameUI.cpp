@@ -72,6 +72,7 @@
 #include "GameClient/Display.h"
 #include "GameClient/WindowLayout.h"
 #include "GameClient/WorldOverlay.h"
+#include "GameLogic/AircraftRange.h"
 #include "GameClient/LookAtXlat.h"
 #include "GameClient/SelectionXlat.h"
 #include "GameClient/Shadow.h"
@@ -1865,6 +1866,9 @@ void InGameUI::preDraw()
 
 	// world maps: borders and city names, under the territory names
 	drawWorldOverlay();
+
+	// world maps: range rings of the selected aircraft / the aircraft special power being aimed
+	drawAircraftRange();
 
 	// conquest mode: territory names and the territory count
 	drawConquestOverlay();
@@ -5641,6 +5645,155 @@ void InGameUI::drawWorldOverlay()
 		m_worldOverlay = NEW WorldOverlay;
 
 	m_worldOverlay->draw( m_drawableCaptionFont );
+}
+
+//-------------------------------------------------------------------------------------------------
+static Bool clipRangeSegment( Real &x1, Real &y1, Real &x2, Real &y2, Real left, Real top, Real right, Real bottom )
+{
+	const Real dx = x2 - x1;
+	const Real dy = y2 - y1;
+	const Real p[ 4 ] = { -dx, dx, -dy, dy };
+	const Real q[ 4 ] = { x1 - left, right - x1, y1 - top, bottom - y1 };
+	Real t0 = 0.0f, t1 = 1.0f;
+	for( Int i = 0; i < 4; ++i )
+	{
+		if( p[ i ] == 0.0f )
+		{
+			if( q[ i ] < 0.0f )
+				return FALSE;
+			continue;
+		}
+		const Real t = q[ i ] / p[ i ];
+		if( p[ i ] < 0.0f )
+		{
+			if( t > t1 ) return FALSE;
+			if( t > t0 ) t0 = t;
+		}
+		else
+		{
+			if( t < t0 ) return FALSE;
+			if( t < t1 ) t1 = t;
+		}
+	}
+	const Real nx1 = x1 + t0 * dx, ny1 = y1 + t0 * dy;
+	const Real nx2 = x1 + t1 * dx, ny2 = y1 + t1 * dy;
+	x1 = nx1; y1 = ny1; x2 = nx2; y2 = ny2;
+	return TRUE;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** A ring on the ground around `center`, drawn in screen space like the world map borders. */
+//-------------------------------------------------------------------------------------------------
+static void drawRangeRing( const Coord3D *center, Real radius, Color color, Real width )
+{
+	if( radius <= 0.0f || TheTacticalView == nullptr || TheDisplay == nullptr || TheTerrainLogic == nullptr )
+		return;
+
+	Int originX, originY;
+	TheTacticalView->getOrigin( &originX, &originY );
+	const Real left = (Real)( originX - 16 );
+	const Real top = (Real)( originY - 16 );
+	const Real right = (Real)( originX + TheTacticalView->getWidth() + 16 );
+	const Real bottom = (Real)( originY + TheTacticalView->getHeight() + 16 );
+
+	const Int STEPS = 160;
+	ICoord2D previous = { 0, 0 };
+	Bool havePrevious = FALSE;
+	for( Int i = 0; i <= STEPS; ++i )
+	{
+		const Real angle = (Real)i * 2.0f * PI / (Real)STEPS;
+		Coord3D p;
+		p.x = center->x + radius * Cos( angle );
+		p.y = center->y + radius * Sin( angle );
+		p.z = TheTerrainLogic->getGroundHeight( p.x, p.y );
+		ICoord2D screen;
+		if( TheTacticalView->worldToScreenTriReturn( &p, &screen ) == View::WTS_INVALID )
+		{
+			havePrevious = FALSE;
+			continue;
+		}
+		if( havePrevious )
+		{
+			Real x1 = (Real)previous.x, y1 = (Real)previous.y, x2 = (Real)screen.x, y2 = (Real)screen.y;
+			if( clipRangeSegment( x1, y1, x2, y2, left, top, right, bottom ) && ( x1 != x2 || y1 != y2 ) )
+				TheDisplay->drawLine( (Int)x1, (Int)y1, (Int)x2, (Int)y2, width, color );
+		}
+		previous = screen;
+		havePrevious = TRUE;
+	}
+}
+
+//-------------------------------------------------------------------------------------------------
+/** TheSuperHackers @feature mohamed 20/11/2026 Range rings (GameLogic/AircraftRange.h). With aircraft of the
+	* local player selected: white = how far it can fly and come back to its airfield / helipad, red = one way only;
+	* with several types selected, the one with the shortest range. While a ranged aircraft special power is being
+	* aimed: its range around the building that calls it. */
+//-------------------------------------------------------------------------------------------------
+void InGameUI::drawAircraftRange()
+{
+	if( TheAircraftRange == nullptr || !TheAircraftRange->isActive() || ThePlayerList == nullptr )
+		return;
+
+	Player *local = ThePlayerList->getLocalPlayer();
+	if( local == nullptr )
+		return;
+
+	const Color white = GameMakeColor( 255, 255, 255, 210 );
+	const Color red = GameMakeColor( 255, 45, 45, 230 );
+	const Color shadow = GameMakeColor( 0, 0, 0, 110 );
+
+	if( m_pendingGUICommand != nullptr )
+	{
+		const SpecialPowerTemplate *power = m_pendingGUICommand->getSpecialPowerTemplate();
+		const Real range = power ? TheAircraftRange->getPowerRange( power ) : 0.0f;
+		if( range > 0.0f )
+		{
+			Object *source = nullptr;
+			if( m_pendingGUICommand->getCommandType() == GUI_COMMAND_SPECIAL_POWER_FROM_SHORTCUT )
+				source = local->findMostReadyShortcutSpecialPowerOfType( power->getSpecialPowerType() );
+			else if( getSelectCount() > 0 && getFirstSelectedDrawable() != nullptr )
+				source = getFirstSelectedDrawable()->getObject();
+			if( source != nullptr )
+			{
+				drawRangeRing( source->getPosition(), range, shadow, 4.0f );
+				drawRangeRing( source->getPosition(), range, white, 2.0f );
+				TheDisplay->flush();
+			}
+			return;
+		}
+	}
+
+	const DrawableList *selected = getAllSelectedDrawables();
+	if( selected == nullptr )
+		return;
+
+	Real best = 0.0f;
+	Coord3D home;
+	home.zero();
+	for( DrawableList::const_iterator it = selected->begin(); it != selected->end(); ++it )
+	{
+		const Object *obj = *it ? ( *it )->getObject() : nullptr;
+		if( obj == nullptr || obj->getControllingPlayer() != local )
+			continue;
+		const Real radius = TheAircraftRange->getRadius( obj );
+		Coord3D pos;
+		if( radius <= 0.0f || !TheAircraftRange->getHomePosition( obj, &pos ) )
+			continue;
+		if( best <= 0.0f || radius < best )
+		{
+			best = radius;
+			home = pos;
+		}
+	}
+
+	if( best > 0.0f )
+	{
+		drawRangeRing( &home, 2.0f * best, shadow, 4.0f );
+		drawRangeRing( &home, 2.0f * best, red, 2.0f );
+		drawRangeRing( &home, best, shadow, 4.0f );
+		drawRangeRing( &home, best, white, 2.0f );
+		TheDisplay->flush();
+	}
 }
 
 //-------------------------------------------------------------------------------------------------

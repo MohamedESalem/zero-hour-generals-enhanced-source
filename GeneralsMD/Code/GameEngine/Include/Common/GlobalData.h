@@ -233,6 +233,7 @@ public:
 	// desync multiplayer and costs no extra memory. Shrinking units makes a world-scale map
 	// feel appropriately vast without altering game balance.
 	Real m_unitVisualScale;
+	Bool m_aircraftRangeDisabled;	///< -noAircraftRange: aircraft fly anywhere again (GameLogic/AircraftRange.h)
 	Real m_civilianStructureScale;	///< -civilianScale: civilian structures (not tech buildings or bridges) shrink by this on top of the world scales, look and footprint
 
 	// TheSuperHackers @feature mohamed 14/11/2026 World scaling ("true miniature"). Unlike

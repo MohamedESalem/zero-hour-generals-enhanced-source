@@ -35,6 +35,7 @@
 #include "Common/ThingTemplate.h"
 #include "GameClient/Drawable.h"
 #include "GameClient/GameClient.h"
+#include "GameLogic/AircraftRange.h"
 #include "GameLogic/ExperienceTracker.h"
 #include "GameLogic/Locomotor.h"
 #include "GameLogic/Module/BodyModule.h"
@@ -2579,6 +2580,10 @@ void JetAIUpdate::aiDoCommand(const AICommandParms* parms)
 	if (!isAllowedToRespondToAiCommands(parms))
 		return;
 
+	// TheSuperHackers @feature mohamed 20/11/2026 aircraft range: judged before it can become a pending command.
+	if (TheAircraftRange && !TheAircraftRange->filterCommand(getObject(), parms))
+		return;
+
 	// note that we always store this, even if nothing will be "pending".
 	m_mostRecentCommand.store(*parms);
 
@@ -2829,4 +2834,30 @@ void JetAIUpdate::loadPostProcess()
 
 	// extend base class
 	AIUpdateInterface::loadPostProcess();
+}
+
+//-------------------------------------------------------------------------------------------------
+// TheSuperHackers @feature mohamed 20/11/2026 aircraft range (GameLogic/AircraftRange.h): low on fuel, fly home
+// and land, the same way as when out of ammo. Its airfield is found again if the old one is gone.
+//-------------------------------------------------------------------------------------------------
+void JetAIUpdate::friend_returnToBaseForRange()
+{
+	if (!getFlag(ALLOW_AIR_LOCO) || getFlag(LANDING_IN_PROGRESS))
+		return;
+
+	m_returnToBaseFrame = 0;
+	setFlag(HAS_PENDING_COMMAND, false);
+	setFlag(USE_SPECIAL_RETURN_LOCO, false);
+	setFlag(ALLOW_INTERRUPT_AND_RESUME_OF_CUR_STATE_FOR_RELOAD, false);
+	setLastCommandSource( CMD_FROM_AI );
+	getStateMachine()->clear();
+	getStateMachine()->setState( RETURNING_FOR_LANDING );
+}
+
+//-------------------------------------------------------------------------------------------------
+Bool JetAIUpdate::friend_isReturningToBase() const
+{
+	const StateID id = getStateMachine()->getCurrentStateID();
+	return id == RETURNING_FOR_LANDING || id == LANDING_AWAIT_CLEARANCE || id == LANDING || id == RETURN_TO_DEAD_AIRFIELD
+		|| id == CIRCLING_DEAD_AIRFIELD;
 }
