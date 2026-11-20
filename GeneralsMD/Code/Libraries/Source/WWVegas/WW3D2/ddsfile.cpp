@@ -67,6 +67,19 @@ DDSFileClass::DDSFileClass(const char* name,unsigned reduction_factor)
 		return;
 	}
 
+	// TheSuperHackers @feature mohamed 20/11/2026 GENZH_LOGTEXTURES: write the name and size of every DDS texture opened to
+	// textures_loaded.txt (to see which textures a game uses, and whether an HD pack is picked up).
+	{
+		static const bool logTextures = getenv("GENZH_LOGTEXTURES") != nullptr;
+		if (logTextures)
+		{
+			if (FILE *log = fopen("textures_loaded.txt", "a"))
+			{
+				fprintf(log, "%s %d\n", Name, file->Size());
+				fclose(log);
+			}
+		}
+	}
 	DateTime=file->Get_Date_Time();
 	char header[4];
 
