@@ -854,6 +854,7 @@ void W3DDisplay::init()
 			{ auto it = prefs.find("AmbientOcclusionQuality"); if (it != prefs.end()) gs.aoHalfResolution = stricmp(it->second.str(), "full") != 0; }
 			gs.dynamicLightStrength = number("DynamicLightStrength", gs.dynamicLightStrength);
 			gs.anisotropy = (int)number("AnisotropicFiltering", (float)gs.anisotropy);
+			gs.mipBias = number("MipBias", gs.mipBias);
 			gs.pixelLighting = flag("PixelLighting", true);
 			gs.specularStrength = number("SpecularStrength", gs.specularStrength);
 			VkGfx_Configure(gs);

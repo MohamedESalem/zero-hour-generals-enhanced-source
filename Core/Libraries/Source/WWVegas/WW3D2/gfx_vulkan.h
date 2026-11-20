@@ -28,6 +28,7 @@ struct VkGfx_Settings
 	bool dynamicLights = true;		// explosions and other light pulses of the game light their surroundings (screen space)
 	float dynamicLightStrength = 1.0f;
 	int anisotropy = 16;				// anisotropic texture filtering, 0 or 1 = off
+	float mipBias = -1.0f;			// MipBias: below 0 picks sharper texture levels when a texture is shrunk (ground at play height); 0 = off (a little more shimmer in motion)
 	bool pixelLighting = true;		// per pixel lighting of units and buildings with a soft sun highlight and rim light
 	float specularStrength = 0.30f;
 };

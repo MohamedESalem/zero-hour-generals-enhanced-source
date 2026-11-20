@@ -799,6 +799,13 @@ VkSampler GetSampler(DWORD minF, DWORD magF, DWORD mipF, DWORD addrU, DWORD addr
 	ci.mipmapMode = mipF == 2 ? VK_SAMPLER_MIPMAP_MODE_LINEAR : VK_SAMPLER_MIPMAP_MODE_NEAREST;
 	ci.addressModeU = address(addrU); ci.addressModeV = address(addrV); ci.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 	ci.minLod = 0.0f; ci.maxLod = (mipF == 0) ? 0.25f : VK_LOD_CLAMP_NONE;	// no mip filter: base level only
+	// TheSuperHackers @feature mohamed 20/11/2026 MipBias (Options.ini, GENERALS_MIPBIAS): sharper shrunk textures. On the world map
+	// a terrain cell is only a few pixels at play height, so the ground was drawn from small, blurry mip levels.
+	if (mipF != 0)
+	{
+		static const float bias = [] { const char* e = getenv("GENERALS_MIPBIAS"); return e ? (float)atof(e) : g_cfg.mipBias; }();
+		ci.mipLodBias = std::max(-B.props.limits.maxSamplerLodBias, std::min(B.props.limits.maxSamplerLodBias, bias));
+	}
 	if (B.anisotropy && (minF == 3 || magF == 3) && maxAniso > 1)
 	{
 		ci.anisotropyEnable = VK_TRUE;
