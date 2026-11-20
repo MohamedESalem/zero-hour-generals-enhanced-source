@@ -1513,6 +1513,10 @@ void WaterRenderObjClass::loadSetting( Setting *setting, TimeOfDay timeOfDay )
 void WaterRenderObjClass::updateRenderTargetTextures(CameraClass *cam)
 {
 	m_mirrorReady = FALSE;
+	// TheSuperHackers @performance mohamed 20/11/2026 High above a world map the reflection cannot be seen, but rendering it
+	// draws everything in view a second time (tens of thousands of draws for the whole planet). No reflection up there.
+	if (TheTacticalView && TheGlobalData->m_cameraTopDownStartHeight > 0.0f && TheTacticalView->getCurrentHeightAboveGround() > TheGlobalData->m_cameraTopDownStartHeight)
+		return;
 	if (m_waterType == WATER_TYPE_2_PVSHADER)
 	{
 		if (getClippedWaterPlane(cam, nullptr) && TheTerrainRenderObject && TheTerrainRenderObject->getMap())

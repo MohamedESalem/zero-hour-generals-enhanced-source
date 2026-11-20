@@ -626,6 +626,16 @@ void SortingRendererClass::Flush()
 
 		if ((state->sorting_state.index_buffer_type==BUFFER_TYPE_SORTING || state->sorting_state.index_buffer_type==BUFFER_TYPE_DYNAMIC_SORTING) &&
 			(state->sorting_state.vertex_buffer_types[0]==BUFFER_TYPE_SORTING || state->sorting_state.vertex_buffer_types[0]==BUFFER_TYPE_DYNAMIC_SORTING)) {
+			// TheSuperHackers @bugfix mohamed 20/11/2026 The pool is copied into one dynamic vertex buffer whose size is an unsigned
+			// short: past 65535 vertices it wrapped and the copy ran off its end (crash in the water reflection of the whole
+			// world map). Draw what is pooled first when the next node would not fit; the order of the draws stays the same.
+			if (overlapping_node_count > 0 && (overlapping_vertex_count + state->vertex_count > DEFAULT_SORTING_VERTEX_COUNT || overlapping_node_count >= MAX_OVERLAPPING_NODES))
+			{
+				bool old_enable=DX8Wrapper::_Is_Triangle_Draw_Enabled();
+				DX8Wrapper::_Enable_Triangle_Draw(_EnableTriangleDraw);
+				Flush_Sorting_Pool();
+				DX8Wrapper::_Enable_Triangle_Draw(old_enable);
+			}
 			Insert_To_Sorting_Pool(state);
 		}
 		else {

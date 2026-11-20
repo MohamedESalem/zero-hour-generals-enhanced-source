@@ -1310,8 +1310,18 @@ void ReleaseGpuBuf(void* p)
 
 template <class Buf> GpuBuf* CachedGpuBuffer(Buf* b, VkBufferUsageFlags usage)
 {
-	if (!b || !B.ready || b->m_gpuDynamic || (b->m_usage & GFX_USAGE_DYNAMIC) || b->m_data.empty())
+	if (!b || !B.ready || (b->m_usage & GFX_USAGE_DYNAMIC) || b->m_data.empty())
 		return nullptr;
+	// TheSuperHackers @performance mohamed 20/11/2026 A buffer that changed twice in a row once (the world map's terrain tiles
+	// while the map loads and is lit) stayed "dynamic" for good and was copied into the ring on every draw: ~107 MB a
+	// frame. While dynamic, m_gpuVersion/m_gpuFrame track its last change; unchanged for 120 frames it gets a GPU copy again.
+	if (b->m_gpuDynamic)
+	{
+		if (b->m_gpuVersion != b->m_version) { b->m_gpuVersion = b->m_version; b->m_gpuFrame = g_frame; return nullptr; }
+		if (g_frame - b->m_gpuFrame < 120)
+			return nullptr;
+		b->m_gpuDynamic = false;
+	}
 	if (b->m_gpu && b->m_gpuVersion == b->m_version)
 		return (GpuBuf*)b->m_gpu;
 	if (b->m_gpu)
@@ -1319,7 +1329,7 @@ template <class Buf> GpuBuf* CachedGpuBuffer(Buf* b, VkBufferUsageFlags usage)
 		const bool again = g_frame - b->m_gpuFrame <= 2;		// changed again right after the last copy: this buffer is really dynamic
 		ReleaseGpuBuf(b->m_gpu);
 		b->m_gpu = nullptr;
-		if (again) { b->m_gpuDynamic = true; return nullptr; }
+		if (again) { b->m_gpuDynamic = true; b->m_gpuVersion = b->m_version; b->m_gpuFrame = g_frame; return nullptr; }
 	}
 	GpuBuf* g = new GpuBuf();
 	const VkDeviceSize size = std::max<size_t>(b->m_data.size(), 16);

@@ -802,6 +802,93 @@ static LONG WINAPI UnHandledExceptionFilter( struct _EXCEPTION_POINTERS* e_info 
 	return EXCEPTION_EXECUTE_HANDLER;
 }
 
+#ifdef _WIN64
+// TheSuperHackers @feature mohamed 20/11/2026 The x64 build has only crash handler stubs, so a crash left nothing behind.
+// This vectored handler writes the faulting address and a symbolized call stack (dbghelp + generalszh.pdb, loaded at run
+// time) to crash_x64.txt in the working directory: for access violations, heap corruption, stack overflow and the like.
+// The first-chance call also sees exceptions that are handled later; the game's own __try blocks are rare, and only the
+// first few are written. GENZH_NO_CRASHLOG turns it off.
+#include <stdio.h>	// the dbghelp types come with Common/StackDump.h
+static LONG s_crashLogsWritten = 0;
+static LONG CALLBACK x64CrashLogger( PEXCEPTION_POINTERS ep )
+{
+	const DWORD code = ep->ExceptionRecord->ExceptionCode;
+	const Bool fatal = code == EXCEPTION_ACCESS_VIOLATION || code == 0xC0000374 /*heap corruption*/ || code == EXCEPTION_STACK_OVERFLOW
+		|| code == EXCEPTION_ILLEGAL_INSTRUCTION || code == EXCEPTION_INT_DIVIDE_BY_ZERO || code == EXCEPTION_ARRAY_BOUNDS_EXCEEDED || code == 0xC0000409 /*stack buffer overrun*/;
+	if (!fatal)
+		return EXCEPTION_CONTINUE_SEARCH;
+	// access violations inside drivers and system DLLs are often handled there (first chance); only ours are logged
+	const DWORD64 exeBase = (DWORD64)GetModuleHandle( nullptr ), ip = (DWORD64)ep->ExceptionRecord->ExceptionAddress;
+	static const Bool logAll = getenv("GENZH_CRASHLOG_ALL") != nullptr;	// also access violations in other modules
+	if (code == EXCEPTION_ACCESS_VIOLATION && !logAll && (ip < exeBase || ip > exeBase + 0x4000000))
+		return EXCEPTION_CONTINUE_SEARCH;
+	if (InterlockedIncrement( &s_crashLogsWritten ) > 3)
+		return EXCEPTION_CONTINUE_SEARCH;
+
+	FILE *out = fopen( "crash_x64.txt", s_crashLogsWritten == 1 ? "w" : "a" );
+	if (!out)
+		return EXCEPTION_CONTINUE_SEARCH;
+	const DWORD64 base = (DWORD64)GetModuleHandle( nullptr );
+	fprintf( out, "exception %08lX at %p (exe+0x%llX)", code, ep->ExceptionRecord->ExceptionAddress, (unsigned long long)((DWORD64)ep->ExceptionRecord->ExceptionAddress - base) );
+	if (code == EXCEPTION_ACCESS_VIOLATION && ep->ExceptionRecord->NumberParameters >= 2)
+		fprintf( out, ", %s address %p", ep->ExceptionRecord->ExceptionInformation[0] == 1 ? "write" : ep->ExceptionRecord->ExceptionInformation[0] == 8 ? "execute" : "read", (void *)ep->ExceptionRecord->ExceptionInformation[1] );
+	fprintf( out, "\n" );
+
+	HMODULE dbghelp = LoadLibraryA( "dbghelp.dll" );
+	typedef BOOL (WINAPI *SymInitializeFn)( HANDLE, PCSTR, BOOL );
+	typedef BOOL (WINAPI *SymFromAddrFn)( HANDLE, DWORD64, PDWORD64, PSYMBOL_INFO );
+	typedef BOOL (WINAPI *SymGetLineFn)( HANDLE, DWORD64, PDWORD, PIMAGEHLP_LINE64 );
+	typedef DWORD (WINAPI *SymSetOptionsFn)( DWORD );
+	typedef BOOL (WINAPI *StackWalk64Fn)( DWORD, HANDLE, HANDLE, LPSTACKFRAME64, PVOID, PREAD_PROCESS_MEMORY_ROUTINE64, PFUNCTION_TABLE_ACCESS_ROUTINE64, PGET_MODULE_BASE_ROUTINE64, PTRANSLATE_ADDRESS_ROUTINE64 );
+	SymInitializeFn symInit = dbghelp ? (SymInitializeFn)GetProcAddress( dbghelp, "SymInitialize" ) : nullptr;
+	SymFromAddrFn symFromAddr = dbghelp ? (SymFromAddrFn)GetProcAddress( dbghelp, "SymFromAddr" ) : nullptr;
+	SymGetLineFn symGetLine = dbghelp ? (SymGetLineFn)GetProcAddress( dbghelp, "SymGetLineFromAddr64" ) : nullptr;
+	SymSetOptionsFn symSetOptions = dbghelp ? (SymSetOptionsFn)GetProcAddress( dbghelp, "SymSetOptions" ) : nullptr;
+	StackWalk64Fn stackWalk = dbghelp ? (StackWalk64Fn)GetProcAddress( dbghelp, "StackWalk64" ) : nullptr;
+	PFUNCTION_TABLE_ACCESS_ROUTINE64 tableAccess = dbghelp ? (PFUNCTION_TABLE_ACCESS_ROUTINE64)GetProcAddress( dbghelp, "SymFunctionTableAccess64" ) : nullptr;
+	PGET_MODULE_BASE_ROUTINE64 moduleBase = dbghelp ? (PGET_MODULE_BASE_ROUTINE64)GetProcAddress( dbghelp, "SymGetModuleBase64" ) : nullptr;
+	const HANDLE process = GetCurrentProcess();
+	const Bool haveSyms = symInit && symFromAddr && stackWalk && tableAccess && moduleBase;
+	if (haveSyms)
+	{
+		if (symSetOptions)
+			symSetOptions( SYMOPT_UNDNAME | SYMOPT_DEFERRED_LOADS | SYMOPT_LOAD_LINES );
+		symInit( process, nullptr, TRUE );
+		CONTEXT ctx = *ep->ContextRecord;
+		STACKFRAME64 frame = {};
+		frame.AddrPC.Offset = ctx.Rip; frame.AddrPC.Mode = AddrModeFlat;
+		frame.AddrFrame.Offset = ctx.Rbp; frame.AddrFrame.Mode = AddrModeFlat;
+		frame.AddrStack.Offset = ctx.Rsp; frame.AddrStack.Mode = AddrModeFlat;
+		for (int i = 0; i < 40 && stackWalk( IMAGE_FILE_MACHINE_AMD64, process, GetCurrentThread(), &frame, &ctx, nullptr, tableAccess, moduleBase, nullptr ); ++i)
+		{
+			const DWORD64 pc = frame.AddrPC.Offset;
+			if (pc == 0)
+				break;
+			char buffer[sizeof(SYMBOL_INFO) + 256] = {};
+			SYMBOL_INFO *sym = (SYMBOL_INFO *)buffer;
+			sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+			sym->MaxNameLen = 255;
+			DWORD64 displacement = 0;
+			IMAGEHLP_LINE64 line = {};
+			line.SizeOfStruct = sizeof(line);
+			DWORD lineDisp = 0;
+			const Bool named = symFromAddr( process, pc, &displacement, sym );
+			const Bool lined = symGetLine && symGetLine( process, pc, &lineDisp, &line );
+			fprintf( out, "  %2d %p  %s+0x%llX", i, (void *)pc, named ? sym->Name : "?", (unsigned long long)displacement );
+			if (lined)
+				fprintf( out, "  %s(%lu)", line.FileName, line.LineNumber );
+			fprintf( out, "\n" );
+		}
+	}
+	else
+	{
+		fprintf( out, "  (dbghelp not available)\n" );
+	}
+	fclose( out );
+	return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
+
 // WinMain ====================================================================
 /** Application entry point */
 //=============================================================================
@@ -817,6 +904,10 @@ Int APIENTRY WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance,
 	try {
 
 		SetUnhandledExceptionFilter( UnHandledExceptionFilter );
+#ifdef _WIN64
+		if (!getenv("GENZH_NO_CRASHLOG"))
+			AddVectoredExceptionHandler( 1, x64CrashLogger );
+#endif
 		//
 		// there is something about checkin in and out the .dsp and .dsw files
 		// that blows the working directory information away on each of the

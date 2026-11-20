@@ -64,6 +64,7 @@
 
 #include "GameClient/TerrainVisual.h"
 #include "GameClient/View.h"
+#include "Common/OptionPreferences.h"
 #include "GameClient/Water.h"
 
 #include "GameLogic/AIPathfind.h"
@@ -125,6 +126,7 @@ inline Int IABS(Int x) {	if (x>=0) return x; return -x;};
 //=============================================================================
 void HeightMapRenderObjClass::freeIndexVertexBuffers()
 {
+	freeTerrainOverview();
 	REF_PTR_RELEASE(m_indexBuffer);
 
 	if (m_vertexBufferTiles) {
@@ -329,6 +331,7 @@ Int HeightMapRenderObjClass::updateVB(DX8VertexBufferClass	*pVB, VERTEX_FORMAT *
 		DX8VertexBufferClass::WriteLockClass lockVtxBuffer(pVB);
 		VERTEX_FORMAT *vbHardware = (VERTEX_FORMAT*)lockVtxBuffer.Get_Vertex_Array();
 		VERTEX_FORMAT *vBase = data;
+		invalidateTileBounds(data);
 		// Note that we are building the vertex buffer data in the memory buffer, data.
 		// At the bottom, we will copy the final vertex data for one cell into the
 		// hardware vertex buffer.
@@ -1330,6 +1333,9 @@ Int HeightMapRenderObjClass::initHeightData(Int x, Int y, WorldHeightMap *pMap, 
 
 		m_vertexBufferTiles = NEW DX8VertexBufferClass*[m_numVertexBufferTiles];
 		m_vertexBufferBackup = NEW VERTEX_FORMAT [m_numVertexBufferTiles * HEIGHTMAP_VERTEX_NUM];
+		memset(m_vertexBufferBackup, 0, sizeof(VERTEX_FORMAT) * m_numVertexBufferTiles * HEIGHTMAP_VERTEX_NUM);
+		m_tileBounds.clear();
+		m_tileBoundsValid.clear();
 
 		for (i=0; i<m_numVertexBufferTiles; i++) {
 #ifdef USE_NORMALS
@@ -1941,6 +1947,267 @@ void HeightMapRenderObjClass::updateCenter(CameraClass *camera, const Vector3 *c
 //=============================================================================
 //DECLARE_PERF_TIMER(Terrain_Render)
 
+//=============================================================================
+// TheSuperHackers @performance mohamed 20/11/2026 overview terrain, see HeightMap.h
+//=============================================================================
+static const Int OVERVIEW_STEP = 4;			// height samples between overview vertices
+static const Int OVERVIEW_CHUNK = 100;		// overview cells per chunk side: 100*100*6 = 60000 indices (DX8IndexBufferClass takes an unsigned short count)
+
+static Real getTerrainOverviewHeight()
+{
+	static Real height = -1.0f;
+	if (height < 0.0f)
+	{
+		height = 8000.0f;
+		OptionPreferences prefs;
+		OptionPreferences::const_iterator it = prefs.find("TerrainOverviewHeight");
+		if (it != prefs.end())
+			height = (Real)atof(it->second.str());
+		if (const char *e = getenv("GENZH_OVERVIEW_HEIGHT"))
+			height = (Real)atof(e);
+		if (height < 0.0f)
+			height = 0.0f;
+	}
+	return height;
+}
+
+void HeightMapRenderObjClass::freeTerrainOverview()
+{
+	for (size_t i = 0; i < m_overviewChunks.size(); ++i)
+	{
+		REF_PTR_RELEASE(m_overviewChunks[i].vb);
+		REF_PTR_RELEASE(m_overviewChunks[i].ib);
+	}
+	m_overviewChunks.clear();
+	REF_PTR_RELEASE(m_overviewTexture);
+	m_overviewTried = FALSE;
+}
+
+Bool HeightMapRenderObjClass::useTerrainOverview(const CameraClass *camera)
+{
+	if (!TheGlobalData->m_drawEntireTerrain || m_map == nullptr || TheTacticalView == nullptr || camera == nullptr)
+		return FALSE;
+	const Real limit = getTerrainOverviewHeight();
+	if (limit <= 0.0f || TheTacticalView->getCurrentHeightAboveGround() < limit)
+		return FALSE;
+	if (!m_overviewTried)
+	{
+		m_overviewTried = TRUE;
+		buildTerrainOverview();
+	}
+	return !m_overviewChunks.empty() && m_overviewTexture != nullptr;
+}
+
+void HeightMapRenderObjClass::buildTerrainOverview()
+{
+	WorldHeightMap *map = m_map;
+	const Int width = map->getXExtent();		// height samples
+	const Int height = map->getYExtent();
+	const Int border = map->getBorderSizeInline();
+	const Int orgX = map->getDrawOrgX();
+	const Int orgY = map->getDrawOrgY();
+	if (width < 2 || height < 2)
+		return;
+
+	// --- colour texture: one texel per cell or a little more, power of two, all mip levels filled by box filtering
+	Int texW = 1, texH = 1;
+	while (texW < width - 1 && texW < 4096) texW <<= 1;
+	while (texH < height - 1 && texH < 4096) texH <<= 1;
+	m_overviewTexture = MSGNEW("TextureClass") TextureClass(texW, texH, WW3D_FORMAT_A8R8G8B8, MIP_LEVELS_ALL);
+	if (m_overviewTexture == nullptr)
+		return;
+	std::vector<UnsignedInt> level((size_t)texW * texH);
+	for (Int ty = 0; ty < texH; ++ty)
+	{
+		const Real cy = ((Real)ty + 0.5f) * (Real)(height - 1) / (Real)texH;
+		for (Int tx = 0; tx < texW; ++tx)
+		{
+			const Real cx = ((Real)tx + 0.5f) * (Real)(width - 1) / (Real)texW;
+			RGBColor c;
+			map->getTerrainColorAt((cx - border) * MAP_XY_FACTOR, (cy - border) * MAP_XY_FACTOR, &c);
+			const UnsignedInt r = (UnsignedInt)(clamp(0.0f, c.red, 1.0f) * 255.0f), g = (UnsignedInt)(clamp(0.0f, c.green, 1.0f) * 255.0f), b = (UnsignedInt)(clamp(0.0f, c.blue, 1.0f) * 255.0f);
+			level[(size_t)ty * texW + tx] = 0xFF000000u | (r << 16) | (g << 8) | b;
+		}
+	}
+	Int lw = texW, lh = texH;
+	const unsigned int levels = m_overviewTexture->Get_Mip_Level_Count();
+	for (unsigned int l = 0; l < levels; ++l)
+	{
+		SurfaceClass *surface = m_overviewTexture->Get_Surface_Level(l);
+		if (surface)
+		{
+			// the level may be smaller than asked for (texture reduction, device limits): write what it really has
+			SurfaceClass::SurfaceDescription desc;
+			surface->Get_Description(desc);
+			const Bool is32 = desc.Format == WW3D_FORMAT_A8R8G8B8 || desc.Format == WW3D_FORMAT_X8R8G8B8;
+			int pitch = 0;
+			UnsignedByte *bits = is32 ? (UnsignedByte *)surface->Lock(&pitch) : nullptr;
+			if (bits)
+			{
+				const Int sw = (Int)desc.Width, sh = (Int)desc.Height;
+				for (Int y = 0; y < sh; ++y)
+				{
+					UnsignedInt *row = (UnsignedInt *)(bits + (size_t)y * pitch);
+					const Int srcY = min(lh - 1, (Int)((Int64)y * lh / max(1, sh)));
+					for (Int x = 0; x < sw; ++x)
+						row[x] = level[(size_t)srcY * lw + min(lw - 1, (Int)((Int64)x * lw / max(1, sw)))];
+				}
+				surface->Unlock();
+			}
+			REF_PTR_RELEASE(surface);
+		}
+		if (lw == 1 && lh == 1)
+			break;
+		const Int nw = lw > 1 ? lw / 2 : 1, nh = lh > 1 ? lh / 2 : 1;
+		std::vector<UnsignedInt> next((size_t)nw * nh);
+		for (Int y = 0; y < nh; ++y)
+			for (Int x = 0; x < nw; ++x)
+			{
+				UnsignedInt sum[3] = { 0, 0, 0 }; Int n = 0;
+				for (Int dy = 0; dy < 2; ++dy)
+					for (Int dx = 0; dx < 2; ++dx)
+					{
+						const Int sx = min(x * 2 + dx, lw - 1), sy = min(y * 2 + dy, lh - 1);
+						const UnsignedInt p = level[(size_t)sy * lw + sx];
+						sum[0] += (p >> 16) & 0xFF; sum[1] += (p >> 8) & 0xFF; sum[2] += p & 0xFF; ++n;
+					}
+				next[(size_t)y * nw + x] = 0xFF000000u | ((sum[0] / n) << 16) | ((sum[1] / n) << 8) | (sum[2] / n);
+			}
+		level.swap(next); lw = nw; lh = nh;
+	}
+
+	// --- mesh: chunks of OVERVIEW_CHUNK x OVERVIEW_CHUNK overview cells, lit like the terrain (sun + ambient)
+	const Int cellsX = (width - 1 + OVERVIEW_STEP - 1) / OVERVIEW_STEP;		// overview cells
+	const Int cellsY = (height - 1 + OVERVIEW_STEP - 1) / OVERVIEW_STEP;
+	const GlobalData::TerrainLighting &light = TheGlobalData->m_terrainLighting[TheGlobalData->m_timeOfDay][0];
+	Vector3 toSun(-light.lightPos.x, -light.lightPos.y, -light.lightPos.z);
+	toSun.Normalize();
+	auto sampleX = [&](Int ox) { return min(ox * OVERVIEW_STEP, width - 1); };
+	auto sampleY = [&](Int oy) { return min(oy * OVERVIEW_STEP, height - 1); };
+	auto heightAt = [&](Int x, Int y) { x = clamp(0, x, width - 1); y = clamp(0, y, height - 1); return (Real)map->getDisplayHeight(x - orgX, y - orgY) * MAP_HEIGHT_SCALE; };
+
+	for (Int cy0 = 0; cy0 < cellsY; cy0 += OVERVIEW_CHUNK)
+		for (Int cx0 = 0; cx0 < cellsX; cx0 += OVERVIEW_CHUNK)
+		{
+			const Int nx = min(OVERVIEW_CHUNK, cellsX - cx0), ny = min(OVERVIEW_CHUNK, cellsY - cy0);
+			OverviewChunk chunk;
+			chunk.numVerts = (nx + 1) * (ny + 1);
+			chunk.numPolys = nx * ny * 2;
+			chunk.vb = NEW_REF(DX8VertexBufferClass, (DX8_VERTEX_FORMAT, chunk.numVerts, DX8VertexBufferClass::USAGE_DEFAULT));
+			chunk.ib = NEW_REF(DX8IndexBufferClass, (chunk.numPolys * 3));
+			Vector3 lo(1e9f, 1e9f, 1e9f), hi(-1e9f, -1e9f, -1e9f);
+			{
+				DX8VertexBufferClass::WriteLockClass lock(chunk.vb);
+				VERTEX_FORMAT *v = (VERTEX_FORMAT *)lock.Get_Vertex_Array();
+				for (Int j = 0; j <= ny; ++j)
+					for (Int i = 0; i <= nx; ++i, ++v)
+					{
+						const Int sx = sampleX(cx0 + i), sy = sampleY(cy0 + j);
+						v->x = (Real)(sx - border) * MAP_XY_FACTOR;
+						v->y = (Real)(sy - border) * MAP_XY_FACTOR;
+						v->z = heightAt(sx, sy);
+						Vector3 n(heightAt(sx - OVERVIEW_STEP, sy) - heightAt(sx + OVERVIEW_STEP, sy), heightAt(sx, sy - OVERVIEW_STEP) - heightAt(sx, sy + OVERVIEW_STEP), 2.0f * OVERVIEW_STEP * MAP_XY_FACTOR);
+						n.Normalize();
+						const Real d = max(0.0f, Vector3::Dot_Product(n, toSun));
+						const Real r = clamp(0.0f, light.ambient.red + light.diffuse.red * d, 1.0f);
+						const Real g = clamp(0.0f, light.ambient.green + light.diffuse.green * d, 1.0f);
+						const Real b = clamp(0.0f, light.ambient.blue + light.diffuse.blue * d, 1.0f);
+						v->diffuse = 0xFF000000u | ((UnsignedInt)(r * 255.0f) << 16) | ((UnsignedInt)(g * 255.0f) << 8) | (UnsignedInt)(b * 255.0f);
+						v->u1 = (Real)sx / (Real)(width - 1);
+						v->v1 = (Real)sy / (Real)(height - 1);
+						v->u2 = v->u1;
+						v->v2 = v->v1;
+						lo.X = min(lo.X, v->x); lo.Y = min(lo.Y, v->y); lo.Z = min(lo.Z, v->z);
+						hi.X = max(hi.X, v->x); hi.Y = max(hi.Y, v->y); hi.Z = max(hi.Z, v->z);
+					}
+			}
+			{
+				DX8IndexBufferClass::WriteLockClass lock(chunk.ib);
+				UnsignedShort *ib = lock.Get_Index_Array();
+				for (Int j = 0; j < ny; ++j)
+					for (Int i = 0; i < nx; ++i)
+					{
+						const UnsignedShort a = (UnsignedShort)(j * (nx + 1) + i), b = (UnsignedShort)(a + 1);
+						const UnsignedShort c = (UnsignedShort)(a + (nx + 1)), d = (UnsignedShort)(c + 1);
+						*ib++ = a; *ib++ = b; *ib++ = d;
+						*ib++ = a; *ib++ = d; *ib++ = c;
+					}
+			}
+			chunk.bounds.Init_Min_Max(lo - Vector3(1.0f, 1.0f, 2.0f), hi + Vector3(1.0f, 1.0f, 2.0f));
+			m_overviewChunks.push_back(chunk);
+		}
+}
+
+void HeightMapRenderObjClass::drawTerrainOverview(const CameraClass *camera, Bool textured)
+{
+	DX8Wrapper::Set_Transform(GFX_TS_WORLD, Matrix3D(true));
+	if (textured)
+	{
+		DX8Wrapper::Set_Material(m_vertexMaterialClass);
+		DX8Wrapper::Set_Shader(ShaderClass::_PresetOpaqueShader);
+		DX8Wrapper::Set_Texture(0, m_overviewTexture);
+		DX8Wrapper::Set_Texture(1, nullptr);
+	}
+	for (size_t i = 0; i < m_overviewChunks.size(); ++i)
+	{
+		const OverviewChunk &chunk = m_overviewChunks[i];
+		if (camera->Cull_Box(chunk.bounds))
+			continue;
+		DX8Wrapper::Set_Index_Buffer(chunk.ib, 0);
+		DX8Wrapper::Set_Vertex_Buffer(chunk.vb);
+		if (Is_Hidden() == 0)
+			DX8Wrapper::Draw_Triangles(0, chunk.numPolys, 0, chunk.numVerts);
+	}
+	if (textured)
+	{
+		DX8Wrapper::Set_Texture(0, nullptr);
+		ShaderClass::Invalidate();
+	}
+	DX8Wrapper::Set_Index_Buffer(m_indexBuffer, 0);
+}
+
+//=============================================================================
+// TheSuperHackers @performance mohamed 20/11/2026 per tile camera culling, see HeightMap.h
+//=============================================================================
+void HeightMapRenderObjClass::invalidateTileBounds(const VERTEX_FORMAT *tileData)
+{
+	if (!m_vertexBufferBackup || !tileData || m_tileBoundsValid.empty())
+		return;
+	const ptrdiff_t index = (tileData - m_vertexBufferBackup) / HEIGHTMAP_VERTEX_NUM;
+	if (index >= 0 && index < (ptrdiff_t)m_tileBoundsValid.size())
+		m_tileBoundsValid[index] = 0;
+}
+
+Bool HeightMapRenderObjClass::isTileVisible(Int x, Int y, const CameraClass *camera)
+{
+	static const Bool cullOff = getenv("GENZH_NO_TERRAIN_CULL") != nullptr;
+	if (cullOff || camera == nullptr || m_vertexBufferBackup == nullptr)
+		return TRUE;
+	if ((Int)m_tileBounds.size() != m_numVertexBufferTiles)
+	{
+		m_tileBounds.assign(m_numVertexBufferTiles, AABoxClass());
+		m_tileBoundsValid.assign(m_numVertexBufferTiles, 0);
+	}
+	const Int index = y*m_numVBTilesX + x;
+	if (!m_tileBoundsValid[index])
+	{
+		const VERTEX_FORMAT *v = getVertexBufferBackup(x, y);
+		Vector3 lo(v->x, v->y, v->z), hi = lo;
+		for (Int k = 1; k < HEIGHTMAP_VERTEX_NUM; ++k)
+		{
+			const VERTEX_FORMAT &p = v[k];
+			if (p.x < lo.X) lo.X = p.x; if (p.x > hi.X) hi.X = p.x;
+			if (p.y < lo.Y) lo.Y = p.y; if (p.y > hi.Y) hi.Y = p.y;
+			if (p.z < lo.Z) lo.Z = p.z; if (p.z > hi.Z) hi.Z = p.z;
+		}
+		// a little slack: water, roads and the like sit on the tile, and vertices may be lit or moved slightly later
+		const Vector3 slack(1.0f, 1.0f, 2.0f);
+		m_tileBounds[index].Init_Min_Max(lo - slack, hi + slack);
+		m_tileBoundsValid[index] = 1;
+	}
+	return !camera->Cull_Box(m_tileBounds[index]);
+}
+
 void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 {
 	//USE_PERF_TIMER(Terrain_Render)
@@ -2089,8 +2356,12 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 			DX8Wrapper::Set_DX8_Render_State(GFX_RS_COLORWRITEENABLE,GFX_COLORWRITEENABLE_BLUE|GFX_COLORWRITEENABLE_GREEN|GFX_COLORWRITEENABLE_RED);
 	}
 
+	// TheSuperHackers @performance mohamed 20/11/2026 high camera on the world map: the overview terrain instead of the tiles
+	const Bool overview = !doMultiPassWireFrame && !m_disableTextures && useTerrainOverview(&rinfo.Camera);	// also in the water reflection pass, whose camera sees the whole world too
+	if (overview)
+		drawTerrainOverview(&rinfo.Camera, TRUE);
 	Int pass;
- 	for (pass=0; pass<devicePasses; pass++) {
+ 	for (pass=0; pass<(overview ? 0 : devicePasses); pass++) {
 #ifdef TIMING_TESTS
 #endif
 		if (!doMultiPassWireFrame)	//multi-pass wireframe doesn't use regular shaders.
@@ -2106,6 +2377,8 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 		for (j=0; j<m_numVBTilesY; j++)
 			for (i=0; i<m_numVBTilesX; i++)
 			{
+				if (!isTileVisible(i, j, &rinfo.Camera))
+					continue;
 				DX8Wrapper::Set_Vertex_Buffer(getVertexBufferTile(i, j));
 #ifdef PRE_TRANSFORM_VERTEX
 				if (m_xformedVertexBuffer && pass==0) {
@@ -2137,10 +2410,11 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
  			W3DShaderManager::resetShader(st);
 
 		//Draw feathered shorelines
-		renderShoreLines(&rinfo.Camera);
+		if (!overview)
+			renderShoreLines(&rinfo.Camera);
 
 		//Do additional pass over any tiles that have 3 textures blended together.
-		if (TheGlobalData->m_use3WayTerrainBlends)
+		if (TheGlobalData->m_use3WayTerrainBlends && !overview)
 			renderExtraBlendTiles();
 
 		Int yCoordMin = m_map->getDrawOrgY();
@@ -2215,6 +2489,11 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 ///Performs additional terrain rendering pass, blending in the black shroud texture.
 void HeightMapRenderObjClass::renderTerrainPass(CameraClass *pCamera)
 {
+	if (useTerrainOverview(pCamera))
+	{
+		drawTerrainOverview(pCamera, FALSE);
+		return;
+	}
 	DX8Wrapper::Set_Transform(GFX_TS_WORLD,Matrix3D(true));
 
 	//Apply the shader and material
@@ -2224,6 +2503,8 @@ void HeightMapRenderObjClass::renderTerrainPass(CameraClass *pCamera)
 	for (Int j=0; j<m_numVBTilesY; j++)
 		for (Int i=0; i<m_numVBTilesX; i++)
 		{
+			if (!isTileVisible(i, j, pCamera))
+				continue;
 			DX8Wrapper::Set_Vertex_Buffer(getVertexBufferTile(i, j));
 #ifdef PRE_TRANSFORM_VERTEX
 			if (m_xformedVertexBuffer && pass==0) {

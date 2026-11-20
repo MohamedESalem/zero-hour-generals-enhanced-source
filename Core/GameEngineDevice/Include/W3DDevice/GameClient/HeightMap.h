@@ -36,6 +36,8 @@
 #include "Common/GameType.h"
 #include "W3DDevice/GameClient/WorldHeightMap.h"
 #include "W3DDevice/GameClient/BaseHeightMap.h"
+#include "WWMath/aabox.h"
+#include <vector>
 
 
 // Adjust the triangles to make cliff sides most attractive.  jba.
@@ -107,6 +109,34 @@ protected:
 	Int	m_numBlockRowsInLastVB;///<a VB tile may be partially filled, this indicates how many 2x2 vertex blocks are filled.
 
 	DX8VertexBufferClass *getVertexBufferTile(Int x, Int y);
+	// TheSuperHackers @performance mohamed 20/11/2026 With DrawEntireTerrain (the world map) every vertex buffer tile of
+	// the whole map was drawn in every pass, on screen or not: 9216 tiles x 3 passes, ~56 million triangles a frame.
+	// Each tile's box is taken from its vertices (recomputed after the tile is rewritten) and tiles outside the camera
+	// are skipped. Drawing only; GENZH_NO_TERRAIN_CULL turns it off for comparison.
+	std::vector<AABoxClass> m_tileBounds;
+	std::vector<UnsignedByte> m_tileBoundsValid;
+	Bool isTileVisible(Int x, Int y, const CameraClass *camera);
+	void invalidateTileBounds(const VERTEX_FORMAT *tileData);
+
+	// TheSuperHackers @performance mohamed 20/11/2026 Overview terrain for high cameras (DrawEntireTerrain maps only):
+	// every OVERVIEW_STEP-th height sample, textured with one colour per cell (the colours the radar uses), in chunks
+	// that are culled like the tiles. Drawn instead of the full-detail tiles above TerrainOverviewHeight (Options.ini,
+	// GENZH_OVERVIEW_HEIGHT; 0 = never), where a cell is about a pixel and the detail cannot be seen anyway.
+	struct OverviewChunk
+	{
+		DX8VertexBufferClass *vb = nullptr;
+		DX8IndexBufferClass *ib = nullptr;
+		Int numVerts = 0;
+		Int numPolys = 0;
+		AABoxClass bounds;
+	};
+	std::vector<OverviewChunk> m_overviewChunks;
+	TextureClass *m_overviewTexture = nullptr;
+	Bool m_overviewTried = FALSE;
+	Bool useTerrainOverview(const CameraClass *camera);
+	void buildTerrainOverview();
+	void freeTerrainOverview();
+	void drawTerrainOverview(const CameraClass *camera, Bool textured);
 	VERTEX_FORMAT *getVertexBufferBackup(Int x, Int y);
 	UnsignedInt doTheDynamicLight(VERTEX_FORMAT *vb, VERTEX_FORMAT *vbMirror, Vector3*light, Vector3*normal, W3DDynamicLight *pLights[], Int numLights);
 	Int getXWithOrigin(Int x);
