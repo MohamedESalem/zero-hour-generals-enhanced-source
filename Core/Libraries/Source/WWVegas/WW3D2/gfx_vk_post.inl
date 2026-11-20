@@ -290,6 +290,9 @@ void PostDraw(int pass, int blendMode, GpuTexture* const in[4], PostUbo& ub, VkI
 	vkCmdEndRendering(B.cmd);
 }
 
+VkImage BackImage() { return B.backbuf ? B.backbuf->image : B.swapImages[B.imageIndex]; }
+VkImageView BackView() { return B.backbuf ? B.backbuf->view : B.swapViews[B.imageIndex]; }
+
 bool AcquireSwap()
 {
 	if (B.acquired)
@@ -540,11 +543,11 @@ bool RunPostProcess()
 		PostDraw(PASS_COMPOSITE, false, inC, c, B.ldr->image, B.ldr->view, B.ldr->format, B.extent, VK_IMAGE_LAYOUT_UNDEFINED, false);
 		B.ldr->layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL; ToSampled(B.ldr);
 		GpuTexture* inF[4] = { B.ldr, nullptr, nullptr, nullptr };
-		PostDraw(PASS_FXAA, false, inF, ub, B.swapImages[B.imageIndex], B.swapViews[B.imageIndex], B.swapFormat, B.extent, VK_IMAGE_LAYOUT_UNDEFINED, false);
+		PostDraw(PASS_FXAA, false, inF, ub, BackImage(), BackView(), B.swapFormat, B.extent, VK_IMAGE_LAYOUT_UNDEFINED, false);
 	}
 	else
 	{
-		PostDraw(PASS_COMPOSITE, false, inC, ub, B.swapImages[B.imageIndex], B.swapViews[B.imageIndex], B.swapFormat, B.extent, VK_IMAGE_LAYOUT_UNDEFINED, false);
+		PostDraw(PASS_COMPOSITE, false, inC, ub, BackImage(), BackView(), B.swapFormat, B.extent, VK_IMAGE_LAYOUT_UNDEFINED, false);
 	}
 	(void)none;
 	B.stage = 1;

@@ -850,6 +850,7 @@ void W3DDisplay::init()
 			gs.dynamicLights = flag("DynamicLights", true);
 			{ auto it = prefs.find("ShadowQuality"); if (it != prefs.end()) gs.shadowQuality = stricmp(it->second.str(), "low") == 0 ? 0 : (stricmp(it->second.str(), "medium") == 0 ? 1 : 2); }
 			gs.shadowMaxCameraHeight = number("ShadowMaxCameraHeight", gs.shadowMaxCameraHeight);
+			gs.renderScale = number("RenderScale", gs.renderScale);
 			{ auto it = prefs.find("AmbientOcclusionQuality"); if (it != prefs.end()) gs.aoHalfResolution = stricmp(it->second.str(), "full") != 0; }
 			gs.dynamicLightStrength = number("DynamicLightStrength", gs.dynamicLightStrength);
 			gs.anisotropy = (int)number("AnisotropicFiltering", (float)gs.anisotropy);

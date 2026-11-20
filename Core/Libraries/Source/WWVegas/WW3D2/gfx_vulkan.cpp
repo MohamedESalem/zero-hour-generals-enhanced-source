@@ -177,6 +177,12 @@ struct Backend
 	VkSwapchainKHR swapchain = VK_NULL_HANDLE;
 	VkFormat swapFormat = VK_FORMAT_B8G8R8A8_UNORM;
 	VkExtent2D extent{};
+	// TheSuperHackers @feature mohamed 20/11/2026 RenderScale (supersampling): with a scale above 1, extent is the larger
+	// internal size everything is drawn at, backbuf the internal back buffer, and swapExtent the window's swapchain size;
+	// PresentFrame scales backbuf down into the swapchain image. With scale 1 backbuf is null and both extents are equal.
+	VkExtent2D swapExtent{};
+	struct GpuTexture* backbuf = nullptr;
+	float scale = 1.0f;
 	std::vector<VkImage> swapImages;
 	std::vector<VkImageView> swapViews;
 	std::vector<VkSemaphore> renderDone;
@@ -425,11 +431,18 @@ bool CreatePostShaders();
 
 // ---- swapchain ------------------------------------------------------------------------------------------------------------
 
+GpuTexture* NewTarget(uint32_t w, uint32_t h, VkFormat fmt, VkImageUsageFlags usage, VkImageAspectFlags aspect);
+void DestroyGpuTexture(GpuTexture* t);
+// the image the frame is drawn into: the internal back buffer when supersampling, else the swapchain image
+VkImage BackImage();
+VkImageView BackView();
+
 void DestroySwapchain()
 {
 	if (B.device == VK_NULL_HANDLE)
 		return;
 	vkDeviceWaitIdle(B.device);
+	if (B.backbuf) { DestroyGpuTexture(B.backbuf); B.backbuf = nullptr; }
 	DestroyPostTargets();
 	for (VkSemaphore s : B.renderDone) vkDestroySemaphore(B.device, s, nullptr);
 	B.renderDone.clear();
@@ -477,7 +490,7 @@ bool CreateSwapchain()
 	sc.minImageCount = std::max(3u, caps.minImageCount);
 	if (caps.maxImageCount && sc.minImageCount > caps.maxImageCount) sc.minImageCount = caps.maxImageCount;
 	sc.imageFormat = chosen.format; sc.imageColorSpace = chosen.colorSpace; sc.imageExtent = ext; sc.imageArrayLayers = 1;
-	sc.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+	sc.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
 	sc.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
 	sc.preTransform = caps.currentTransform;
 	sc.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -485,6 +498,20 @@ bool CreateSwapchain()
 	if (vkCreateSwapchainKHR(B.device, &sc, nullptr, &B.swapchain) != VK_SUCCESS)
 		return false;
 	B.swapFormat = chosen.format; B.extent = ext;
+	B.swapExtent = ext;
+	B.scale = 1.0f;
+	{
+		float s = g_cfg.renderScale;
+		if (const char* e = getenv("GENERALS_RENDERSCALE")) s = (float)atof(e);
+		if (s > 1.01f)
+		{
+			s = std::min(s, 2.0f);
+			const VkExtent2D big{ (uint32_t)(ext.width * s + 0.5f), (uint32_t)(ext.height * s + 0.5f) };
+			GpuTexture* bb = NewTarget(big.width, big.height, chosen.format, VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, VK_IMAGE_ASPECT_COLOR_BIT);
+			if (bb) { B.backbuf = bb; B.extent = big; B.scale = (float)big.width / (float)ext.width; }
+			else Log("RenderScale %.2f: the internal back buffer could not be made, drawing at the window size", s);
+		}
+	}
 
 	vkGetSwapchainImagesKHR(B.device, B.swapchain, &n, nullptr);
 	B.swapImages.resize(n);
@@ -500,7 +527,7 @@ bool CreateSwapchain()
 	}
 
 	VkImageCreateInfo di{ VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
-	di.imageType = VK_IMAGE_TYPE_2D; di.format = VK_FORMAT_D32_SFLOAT_S8_UINT; di.extent = { ext.width, ext.height, 1 };
+	di.imageType = VK_IMAGE_TYPE_2D; di.format = VK_FORMAT_D32_SFLOAT_S8_UINT; di.extent = { B.extent.width, B.extent.height, 1 };
 	di.mipLevels = 1; di.arrayLayers = 1; di.samples = VK_SAMPLE_COUNT_1_BIT; di.tiling = VK_IMAGE_TILING_OPTIMAL;
 	di.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT; di.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 	VKCHECK(vkCreateImage(B.device, &di, nullptr, &B.depthImage));
@@ -513,6 +540,7 @@ bool CreateSwapchain()
 	dv.subresourceRange = { VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT, 0, 1, 0, 1 };
 	VKCHECK(vkCreateImageView(B.device, &dv, nullptr, &B.depthView));
 	Log("swapchain %ux%u, %u images, format %d, present mode %d", ext.width, ext.height, n, (int)B.swapFormat, (int)mode);
+	if (B.backbuf) Log("RenderScale: drawing at %ux%u, scaled down to %ux%u", B.extent.width, B.extent.height, ext.width, ext.height);
 	if (B.postOn)
 		CreatePostTargets();
 	return true;
@@ -1181,8 +1209,8 @@ bool EnsureRendering()
 	const VkAttachmentLoadOp depthLoadOp = B.depthLoaded ? VK_ATTACHMENT_LOAD_OP_LOAD : VK_ATTACHMENT_LOAD_OP_CLEAR;
 	const VkImageLayout colorOld = B.colorLoaded ? VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
 	const VkImageLayout depthOld = B.depthLoaded ? VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL : VK_IMAGE_LAYOUT_UNDEFINED;
-	VkImage colorImage = hdrStage ? B.hdr->image : B.swapImages[B.imageIndex];
-	VkImageView colorView = hdrStage ? B.hdr->view : B.swapViews[B.imageIndex];
+	VkImage colorImage = hdrStage ? B.hdr->image : BackImage();
+	VkImageView colorView = hdrStage ? B.hdr->view : BackView();
 	ImageBarrier(B.cmd, colorImage, colorOld, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, B.colorLoaded ? VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT : 0, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT);
 	if (hdrStage)
@@ -1256,7 +1284,7 @@ bool RecordShotCopy()
 			return false;
 		g_shotSize = need;
 	}
-	VkImage img = B.swapImages[B.imageIndex];
+	VkImage img = BackImage();
 	ImageBarrier(B.cmd, img, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
 	VkBufferImageCopy bic{};
@@ -1405,9 +1433,9 @@ bool SwapchainStale()
 	{
 		RECT rc;
 		GetClientRect(B.window, &rc);
-		return rc.right > rc.left && rc.bottom > rc.top && ((uint32_t)(rc.right - rc.left) != B.extent.width || (uint32_t)(rc.bottom - rc.top) != B.extent.height);
+		return rc.right > rc.left && rc.bottom > rc.top && ((uint32_t)(rc.right - rc.left) != B.swapExtent.width || (uint32_t)(rc.bottom - rc.top) != B.swapExtent.height);
 	}
-	return caps.currentExtent.width != 0 && caps.currentExtent.height != 0 && (caps.currentExtent.width != B.extent.width || caps.currentExtent.height != B.extent.height);
+	return caps.currentExtent.width != 0 && caps.currentExtent.height != 0 && (caps.currentExtent.width != B.swapExtent.width || caps.currentExtent.height != B.swapExtent.height);
 }
 
 void PresentFrame()
@@ -1470,8 +1498,25 @@ void PresentFrame()
 	}
 	EndPass();
 	const bool shot = !g_shotPath.empty() && RecordShotCopy();
-	ImageBarrier(B.cmd, B.swapImages[B.imageIndex], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_ASPECT_COLOR_BIT,
-		VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, 0);
+	if (B.backbuf)
+	{
+		// supersampling: the larger frame is filtered down into the window's swapchain image
+		ImageBarrier(B.cmd, B.backbuf->image, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT,
+			VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
+		ImageBarrier(B.cmd, B.swapImages[B.imageIndex], VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT,
+			VK_PIPELINE_STAGE_2_TRANSFER_BIT, 0, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
+		VkImageBlit bl{};
+		bl.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 }; bl.dstSubresource = bl.srcSubresource;
+		bl.srcOffsets[1] = { (int32_t)B.extent.width, (int32_t)B.extent.height, 1 };
+		bl.dstOffsets[1] = { (int32_t)B.swapExtent.width, (int32_t)B.swapExtent.height, 1 };
+		vkCmdBlitImage(B.cmd, B.backbuf->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, B.swapImages[B.imageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &bl, VK_FILTER_LINEAR);
+		ImageBarrier(B.cmd, B.swapImages[B.imageIndex], VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_ASPECT_COLOR_BIT,
+			VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, 0);
+		B.backbuf->layout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+	}
+	else
+		ImageBarrier(B.cmd, B.swapImages[B.imageIndex], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_IMAGE_ASPECT_COLOR_BIT,
+			VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, 0);
 	VKCHECK(vkEndCommandBuffer(B.cmd));
 	B.cmdOpen = false;
 
@@ -1549,7 +1594,7 @@ void PresentFrame()
 // waits for it, like a Direct3D 8 read of the render target would; rendering then resumes on top of the existing content.
 bool ReadBackBuffer(NullSurface* dst, RECT r)
 {
-	if (!B.ready || !dst || BytesPerPixel(dst->m_format) != 4)
+	if (!B.ready || !dst || BytesPerPixel(dst->m_format) != 4 || B.backbuf)	// not while supersampling: the frame is larger than the game thinks
 		return false;
 	struct RestoreTarget { GpuTexture* t; ~RestoreTarget() { B.curTarget = t; } } restoreTarget{ B.curTarget };
 	B.curTarget = nullptr;
@@ -1572,7 +1617,7 @@ bool ReadBackBuffer(NullSurface* dst, RECT r)
 	}
 	const bool fromHdr = B.postOn && B.stage == 0 && B.hdr;
 	EndPass();
-	VkImage img = fromHdr ? B.ldr->image : B.swapImages[B.imageIndex];
+	VkImage img = fromHdr ? B.ldr->image : BackImage();
 	if (fromHdr)
 	{
 		// the HDR scene is converted to the swapchain format first
@@ -1640,12 +1685,22 @@ bool CopyBackBufferToTexture(GpuTexture* g)
 		return false;
 	EndPass();
 	const bool fromHdr = B.postOn && B.stage == 0 && B.hdr;
-	VkImage src = fromHdr ? B.hdr->image : B.swapImages[B.imageIndex];
+	VkImage src = fromHdr ? B.hdr->image : BackImage();
 	ImageBarrier(B.cmd, src, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_READ_BIT);
 	ImageBarrier(B.cmd, g->image, g->layout, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_ASPECT_COLOR_BIT,
 		VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT | VK_PIPELINE_STAGE_2_TRANSFER_BIT, 0, VK_PIPELINE_STAGE_2_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT);
-	if (fromHdr)
+	if (B.backbuf)
+	{
+		// supersampling: the texture holds the frame at the game's size, so the larger frame is scaled into it
+		VkImageBlit bl{};
+		bl.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 }; bl.dstSubresource = bl.srcSubresource;
+		const int32_t dw = (int32_t)std::min(B.swapExtent.width, g->width), dh = (int32_t)std::min(B.swapExtent.height, g->height);
+		bl.srcOffsets[1] = { std::min((int32_t)B.extent.width, (int32_t)(dw * B.scale + 0.5f)), std::min((int32_t)B.extent.height, (int32_t)(dh * B.scale + 0.5f)), 1 };
+		bl.dstOffsets[1] = { dw, dh, 1 };
+		vkCmdBlitImage(B.cmd, src, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, g->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &bl, VK_FILTER_LINEAR);
+	}
+	else 	if (fromHdr)
 	{
 		VkImageBlit bl{};
 		bl.srcSubresource = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1 }; bl.dstSubresource = bl.srcSubresource;
@@ -2020,6 +2075,7 @@ private:
 			{
 				B.haveProj = true; B.projCaptured = true; memcpy(B.lastProj, m_matrix[3], 64); memcpy(B.lastView, m_matrix[2], 64);
 				B.lastViewport[0] = (float)m_viewport.X; B.lastViewport[1] = (float)m_viewport.Y; B.lastViewport[2] = (float)m_viewport.Width; B.lastViewport[3] = (float)m_viewport.Height;
+				if (B.backbuf) for (int k = 0; k < 4; ++k) B.lastViewport[k] *= B.scale;	// supersampling: the post passes work in the pixels of the larger frame
 			}
 		}
 		const UINT stride = m_stride ? m_stride : 16;
@@ -2120,7 +2176,7 @@ private:
 		u.flags[0] = pretransformed ? 1 : 0;
 		u.flags[2] = m_renderStates[D3DRS_ALPHAFUNC]; u.flags[3] = m_renderStates[D3DRS_ALPHATESTENABLE] ? 1 : 0;
 		u.alphaRef[0] = (m_renderStates[D3DRS_ALPHAREF] & 255) / 255.f;
-		u.alphaRef[1] = (float)m_viewport.Height;		// point sprite sizes scale with the viewport height
+		u.alphaRef[1] = (float)m_viewport.Height * ((!B.curTarget && B.backbuf) ? B.scale : 1.0f);		// point sprite sizes scale with the viewport height
 		for (int s = 0; s < 4; ++s)
 		{
 			const DWORD* t = m_stageStates[s];
@@ -2248,14 +2304,17 @@ private:
 		vkCmdBindPipeline(B.cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipe);
 		VkViewport vp{ 0, 0, (float)B.passExtent.width, (float)B.passExtent.height, 0.0f, 1.0f };
 		VkRect2D sc{ { 0, 0 }, B.passExtent };
+		// supersampling: the game's viewport is in window pixels; the frame (not a render target texture) is RenderScale larger
+		const float vs = (!B.curTarget && B.backbuf) ? B.scale : 1.0f;
+		const uint32_t vX = (uint32_t)(m_viewport.X * vs + 0.5f), vY = (uint32_t)(m_viewport.Y * vs + 0.5f), vW = (uint32_t)(m_viewport.Width * vs + 0.5f), vH = (uint32_t)(m_viewport.Height * vs + 0.5f);
 		if (!pretransformed)
 		{
-			vp.x = (float)m_viewport.X; vp.y = (float)m_viewport.Y; vp.width = (float)m_viewport.Width; vp.height = (float)m_viewport.Height;
+			vp.x = (float)vX; vp.y = (float)vY; vp.width = (float)vW; vp.height = (float)vH;
 			vp.minDepth = m_viewport.MinZ; vp.maxDepth = m_viewport.MaxZ;
 		}
-		sc.offset = { (int32_t)m_viewport.X, (int32_t)m_viewport.Y };
-		sc.extent = { std::min<uint32_t>(m_viewport.Width, B.passExtent.width - std::min<uint32_t>(m_viewport.X, B.passExtent.width)),
-			std::min<uint32_t>(m_viewport.Height, B.passExtent.height - std::min<uint32_t>(m_viewport.Y, B.passExtent.height)) };
+		sc.offset = { (int32_t)vX, (int32_t)vY };
+		sc.extent = { std::min<uint32_t>(vW, B.passExtent.width - std::min<uint32_t>(vX, B.passExtent.width)),
+			std::min<uint32_t>(vH, B.passExtent.height - std::min<uint32_t>(vY, B.passExtent.height)) };
 		vkCmdSetViewport(B.cmd, 0, 1, &vp);
 		vkCmdSetScissor(B.cmd, 0, 1, &sc);
 		vkCmdSetStencilReference(B.cmd, VK_STENCIL_FACE_FRONT_AND_BACK, m_renderStates[D3DRS_STENCILREF]);

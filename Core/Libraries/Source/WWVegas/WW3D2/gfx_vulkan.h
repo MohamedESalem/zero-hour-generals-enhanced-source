@@ -23,6 +23,7 @@ struct VkGfx_Settings
 	// Options.ini keys DynamicLights, DynamicLightStrength, AnisotropicFiltering, PixelLighting, SpecularStrength
 	int shadowQuality = 1;			// 2 high (4096 shadow map, full filtering), 1 medium (2048 map, the default), 0 low (2048 map, fewer filter taps)
 	float shadowMaxCameraHeight = 1200.0f;	// ShadowMaxCameraHeight: no sun shadows above this camera height (0 = always); far out they cannot be seen but cost a second pass over everything
+	float renderScale = 1.0f;		// RenderScale: supersampling, the frame is drawn this many times larger (1 to 2) and scaled down to the window
 	bool aoHalfResolution = true;	// ambient occlusion at half resolution
 	bool dynamicLights = true;		// explosions and other light pulses of the game light their surroundings (screen space)
 	float dynamicLightStrength = 1.0f;
