@@ -418,6 +418,16 @@ void RTS3DScene::Visibility_Check(CameraClass * camera)
 		//we are rendering reflections
 		///@todo: Have better flag to detect reflection pass
 
+		// TheSuperHackers @performance mohamed 20/11/2026 The reflection is a small texture (512 pixels): objects under 2 of its
+		// pixels are left out of it. On the world map this kept thousands of distant units out of the reflection pass.
+		Real mirrorPixelScale = 0.0f;
+		const Vector3 mirrorCameraPos = camera->Get_Position();
+		{
+			const Real vfov = camera->Get_Vertical_FOV();
+			if (vfov > 0.01f && vfov < 3.0f)
+				mirrorPixelScale = 512.0f / (2.0f * tanf(vfov * 0.5f));
+		}
+
 		// Loop over all top-level RenderObjects in this scene. If the bounding sphere is not in front
 		// of all the frustum planes, it is invisible.
 		for (it.First(); !it.Is_Done(); it.Next()) {
@@ -435,6 +445,12 @@ void RTS3DScene::Visibility_Check(CameraClass * camera)
 					robj->Set_Visible(true);
 				} else {
 					robj->Set_Visible(draw->getDrawsInMirror() && !camera->Cull_Sphere(robj->Get_Bounding_Sphere()));
+					if (mirrorPixelScale > 0.0f && robj->Is_Really_Visible())
+					{
+						const SphereClass &sphere = robj->Get_Bounding_Sphere();
+						if (sphere.Radius * mirrorPixelScale < 2.0f * (sphere.Center - mirrorCameraPos).Length())
+							robj->Set_Visible(false);
+					}
 				}
 			}
 			else

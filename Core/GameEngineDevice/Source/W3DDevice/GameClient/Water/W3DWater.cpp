@@ -1516,7 +1516,10 @@ void WaterRenderObjClass::updateRenderTargetTextures(CameraClass *cam)
 	// TheSuperHackers @performance mohamed 20/11/2026 High above a world map the reflection cannot be seen, but rendering it
 	// draws everything in view a second time (tens of thousands of draws for the whole planet). No reflection up there.
 	if (TheTacticalView && TheGlobalData->m_cameraTopDownStartHeight > 0.0f && TheTacticalView->getCurrentHeightAboveGround() > TheGlobalData->m_cameraTopDownStartHeight)
+	{
+		m_mirrorEverRendered = FALSE;	// stale when the camera comes back down
 		return;
+	}
 	if (m_waterType == WATER_TYPE_2_PVSHADER)
 	{
 		if (getClippedWaterPlane(cam, nullptr) && TheTerrainRenderObject && TheTerrainRenderObject->getMap())
@@ -1531,8 +1534,26 @@ void WaterRenderObjClass::updateRenderTargetTextures(CameraClass *cam)
 			m_pReflectionTexture = DX8Wrapper::Create_Render_Target(MODERN_REFLECTION_SIZE, MODERN_REFLECTION_SIZE);
 		if (m_pReflectionTexture)
 		{
+			// TheSuperHackers @performance mohamed 20/11/2026 The reflection re-renders the whole scene (41% of the main thread on
+			// the world map). It is refreshed every WaterReflectionInterval-th frame (Options.ini, default 2, 1 = every frame) and
+			// reused in between; a reflection one frame old cannot be told apart.
+			static Int interval = -1;
+			if (interval < 0)
+			{
+				OptionPreferences prefs;
+				OptionPreferences::const_iterator it = prefs.find("WaterReflectionInterval");
+				interval = it != prefs.end() ? atoi(it->second.str()) : 2;
+				if (interval < 1) interval = 1;
+			}
+			static UnsignedInt calls = 0;
+			if (m_mirrorEverRendered && (calls++ % (UnsignedInt)interval) != 0)
+			{
+				m_mirrorReady = TRUE;	// last refresh still in the texture
+				return;
+			}
 			renderMirror(cam);
 			m_mirrorReady = TRUE;
+			m_mirrorEverRendered = TRUE;
 		}
 	}
 }

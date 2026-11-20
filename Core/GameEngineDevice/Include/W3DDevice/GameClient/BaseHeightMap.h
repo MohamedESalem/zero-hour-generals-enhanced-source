@@ -299,6 +299,10 @@ protected:
 	shoreLineTileInfo *m_shoreLineTilePositions;	///<array holding x,y tile positions of all shoreline terrain.
 	Int m_numShoreLineTiles;		///<number of tiles in m_shoreLineTilePositions.
 	Int m_numVisibleShoreLineTiles;	///<number of visible tiles.
+	// TheSuperHackers @performance mohamed 20/11/2026 cells of the terrain tiles drawn this pass (HeightMapRenderObjClass
+	// sets it when it culls tiles); the shorelines are limited to it instead of the whole draw area (the whole map).
+	Bool m_haveVisibleCellRect = FALSE;
+	Int m_visibleCellMinX = 0, m_visibleCellMinY = 0, m_visibleCellMaxX = 0, m_visibleCellMaxY = 0;
 	Int m_shoreLineTilePositionsSize;	///<total size of array including unused memory.
 	Real m_currentMinWaterOpacity;		///<current value inside the gradient lookup texture.
 	shoreLineTileSortInfo *m_shoreLineSortInfos;

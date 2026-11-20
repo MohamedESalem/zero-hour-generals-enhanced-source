@@ -2478,6 +2478,15 @@ void BaseHeightMapRenderObjClass::renderShoreLinesSorted(CameraClass *pCamera)
 		drawEdgeY = m_map->getYExtent()-1;
 	Int drawStartX=m_map->getDrawOrgX();
 	Int drawStartY=m_map->getDrawOrgY();
+	if (m_haveVisibleCellRect)
+	{
+		if (drawStartX < m_visibleCellMinX) drawStartX = m_visibleCellMinX;
+		if (drawStartY < m_visibleCellMinY) drawStartY = m_visibleCellMinY;
+		if (drawEdgeX > m_visibleCellMaxX) drawEdgeX = m_visibleCellMaxX;
+		if (drawEdgeY > m_visibleCellMaxY) drawEdgeY = m_visibleCellMaxY;
+		if (drawEdgeX <= drawStartX || drawEdgeY <= drawStartY)
+			return;	// no visible tile
+	}
 
 	if (m_shoreLineSortInfosXMajor)	//map is wider than taller.
 	{

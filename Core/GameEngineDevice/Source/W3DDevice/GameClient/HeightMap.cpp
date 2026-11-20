@@ -2360,6 +2360,8 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 	const Bool overview = !doMultiPassWireFrame && !m_disableTextures && useTerrainOverview(&rinfo.Camera);	// also in the water reflection pass, whose camera sees the whole world too
 	if (overview)
 		drawTerrainOverview(&rinfo.Camera, TRUE);
+	m_haveVisibleCellRect = FALSE;
+	Int visMinI = m_numVBTilesX, visMinJ = m_numVBTilesY, visMaxI = -1, visMaxJ = -1;
 	Int pass;
  	for (pass=0; pass<(overview ? 0 : devicePasses); pass++) {
 #ifdef TIMING_TESTS
@@ -2379,6 +2381,11 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 			{
 				if (!isTileVisible(i, j, &rinfo.Camera))
 					continue;
+				if (pass == 0)
+				{
+					if (i < visMinI) visMinI = i; if (i > visMaxI) visMaxI = i;
+					if (j < visMinJ) visMinJ = j; if (j > visMaxJ) visMaxJ = j;
+				}
 				DX8Wrapper::Set_Vertex_Buffer(getVertexBufferTile(i, j));
 #ifdef PRE_TRANSFORM_VERTEX
 				if (m_xformedVertexBuffer && pass==0) {
@@ -2404,13 +2411,22 @@ void HeightMapRenderObjClass::Render(RenderInfoClass & rinfo)
 			}
 	}
 
+	if (TheGlobalData->m_drawEntireTerrain && !overview && devicePasses > 0)
+	{
+		// cells of the drawn tiles, for the shorelines (renderShoreLinesSorted)
+		m_haveVisibleCellRect = TRUE;
+		m_visibleCellMinX = m_map->getDrawOrgX() + visMinI * VERTEX_BUFFER_TILE_LENGTH;
+		m_visibleCellMinY = m_map->getDrawOrgY() + visMinJ * VERTEX_BUFFER_TILE_LENGTH;
+		m_visibleCellMaxX = m_map->getDrawOrgX() + (visMaxI + 1) * VERTEX_BUFFER_TILE_LENGTH + 1;
+		m_visibleCellMaxY = m_map->getDrawOrgY() + (visMaxJ + 1) * VERTEX_BUFFER_TILE_LENGTH + 1;
+	}
 	if (!doMultiPassWireFrame)
 	{
 		if (pass)	//shader was applied at least once?
  			W3DShaderManager::resetShader(st);
 
 		//Draw feathered shorelines
-		if (!overview)
+		if (!overview && !ShaderClass::Is_Backface_Culling_Inverted())	// not in the water reflection: they only write the soft water edge mask
 			renderShoreLines(&rinfo.Camera);
 
 		//Do additional pass over any tiles that have 3 textures blended together.

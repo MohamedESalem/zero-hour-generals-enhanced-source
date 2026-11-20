@@ -92,7 +92,9 @@ void DoShadows(RenderInfoClass & rinfo, Bool stencilPass)
 
 			//This function gets called many times by the W3D renderer
 			//so we use this flag to make sure shadows rendered only once per frame.
-			if (TheW3DShadowManager->isShadowScene())
+			// TheSuperHackers @performance mohamed 20/11/2026 The native Vulkan renderer never draws the stencil volumes (its
+			// shadow map replaces them, or there are no shadows), but building them still cost ~6% of the main thread.
+			if (TheW3DShadowManager->isShadowScene() && !VkGfx_NativeActive())
 			{
 				VkGfx_SuppressSceneDraws(VkGfx_ShadowMapsActive());
 				TheW3DVolumetricShadowManager->renderShadows(projectionCount);

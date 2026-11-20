@@ -174,6 +174,7 @@ protected:
 	Real					m_curWaterZ;			///<height of the water polygon about to be drawn
 	Bool					m_reflectionsEnabled;	///<Options.ini WaterReflections
 	Bool					m_mirrorReady;			///<the reflection texture holds this frame's mirrored scene
+	Bool					m_mirrorEverRendered = FALSE;	///< the reflection texture holds a rendered reflection (it is refreshed every WaterReflectionInterval-th frame)
 	Real					m_mirrorZ;				///<height of the water plane the scene is mirrored at
 	Bool					findMirrorLevel(Real &z) const;	///<height of the first water polygon of the map
 

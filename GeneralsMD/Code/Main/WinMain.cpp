@@ -803,6 +803,163 @@ static LONG WINAPI UnHandledExceptionFilter( struct _EXCEPTION_POINTERS* e_info 
 }
 
 #ifdef _WIN64
+// TheSuperHackers @feature mohamed 20/11/2026 Sampling profiler of the main thread: GENZH_PROFILE="delay,duration" (seconds
+// after start; e.g. "60,20") samples the main thread's call stack about 1000 times a second and writes profile_x64.txt:
+// the functions the thread is in (exclusive) and the functions on the stack (inclusive), in percent of the samples.
+// While the thread is suspended only its registers and the top of its stack are copied (no heap use, which could
+// deadlock on a lock the suspended thread holds); the stack is walked from that copy after the thread runs again.
+#include <stdio.h>
+#include <vector>
+#include <map>
+#include <algorithm>
+#include <string>
+static HANDLE s_profileMainThread = nullptr;
+static unsigned char s_stackCopy[256 * 1024];
+static DWORD64 s_stackCopyBase = 0, s_stackCopySize = 0;
+static BOOL CALLBACK x64ProfilerRead( HANDLE, DWORD64 addr, PVOID buffer, DWORD size, LPDWORD read )
+{
+	if (addr >= s_stackCopyBase && addr + size <= s_stackCopyBase + s_stackCopySize)
+		memcpy( buffer, s_stackCopy + (addr - s_stackCopyBase), size );
+	else if (!ReadProcessMemory( GetCurrentProcess(), (LPCVOID)addr, buffer, size, nullptr ))
+		return FALSE;
+	if (read) *read = size;
+	return TRUE;
+}
+static DWORD WINAPI x64ProfilerThread( LPVOID param )
+{
+	const char *spec = (const char *)param;
+	int delay = 60, duration = 20;
+	sscanf( spec, "%d,%d", &delay, &duration );
+	Sleep( (DWORD)delay * 1000 );
+
+	HMODULE dbghelp = LoadLibraryA( "dbghelp.dll" );
+	if (!dbghelp)
+		return 0;
+	typedef BOOL (WINAPI *SymInitializeFn)( HANDLE, PCSTR, BOOL );
+	typedef BOOL (WINAPI *SymFromAddrFn)( HANDLE, DWORD64, PDWORD64, PSYMBOL_INFO );
+	typedef DWORD (WINAPI *SymSetOptionsFn)( DWORD );
+	typedef BOOL (WINAPI *StackWalk64Fn)( DWORD, HANDLE, HANDLE, LPSTACKFRAME64, PVOID, PREAD_PROCESS_MEMORY_ROUTINE64, PFUNCTION_TABLE_ACCESS_ROUTINE64, PGET_MODULE_BASE_ROUTINE64, PTRANSLATE_ADDRESS_ROUTINE64 );
+	SymInitializeFn symInit = (SymInitializeFn)GetProcAddress( dbghelp, "SymInitialize" );
+	SymFromAddrFn symFromAddr = (SymFromAddrFn)GetProcAddress( dbghelp, "SymFromAddr" );
+	SymSetOptionsFn symSetOptions = (SymSetOptionsFn)GetProcAddress( dbghelp, "SymSetOptions" );
+	StackWalk64Fn stackWalk = (StackWalk64Fn)GetProcAddress( dbghelp, "StackWalk64" );
+	PFUNCTION_TABLE_ACCESS_ROUTINE64 tableAccess = (PFUNCTION_TABLE_ACCESS_ROUTINE64)GetProcAddress( dbghelp, "SymFunctionTableAccess64" );
+	PGET_MODULE_BASE_ROUTINE64 moduleBase = (PGET_MODULE_BASE_ROUTINE64)GetProcAddress( dbghelp, "SymGetModuleBase64" );
+	if (!symInit || !symFromAddr || !stackWalk || !tableAccess || !moduleBase)
+		return 0;
+	const HANDLE process = GetCurrentProcess();
+	if (symSetOptions)
+		symSetOptions( SYMOPT_UNDNAME );
+	symInit( process, nullptr, TRUE );
+
+	std::vector<DWORD64> stacks;		// frames of all samples, each sample ended by a 0
+	stacks.reserve( 2u << 20 );
+	std::vector<DWORD64> frames;
+	frames.reserve( 64 );
+	size_t samples = 0;
+	const DWORD end = GetTickCount() + (DWORD)duration * 1000;
+	while (GetTickCount() < end)
+	{
+		if (SuspendThread( s_profileMainThread ) != (DWORD)-1)
+		{
+			CONTEXT ctx = {};
+			ctx.ContextFlags = CONTEXT_FULL;
+			const BOOL haveContext = GetThreadContext( s_profileMainThread, &ctx );
+			s_stackCopySize = 0;
+			if (haveContext)
+			{
+				MEMORY_BASIC_INFORMATION mbi;
+				if (VirtualQuery( (LPCVOID)ctx.Rsp, &mbi, sizeof(mbi) ))
+				{
+					const DWORD64 regionEnd = (DWORD64)mbi.BaseAddress + mbi.RegionSize;
+					s_stackCopyBase = ctx.Rsp;
+					s_stackCopySize = regionEnd - ctx.Rsp;
+					if (s_stackCopySize > sizeof(s_stackCopy))
+						s_stackCopySize = sizeof(s_stackCopy);
+					memcpy( s_stackCopy, (const void *)ctx.Rsp, (size_t)s_stackCopySize );
+				}
+			}
+			ResumeThread( s_profileMainThread );
+			frames.clear();
+			if (haveContext)
+			{
+				STACKFRAME64 frame = {};
+				frame.AddrPC.Offset = ctx.Rip; frame.AddrPC.Mode = AddrModeFlat;
+				frame.AddrFrame.Offset = ctx.Rbp; frame.AddrFrame.Mode = AddrModeFlat;
+				frame.AddrStack.Offset = ctx.Rsp; frame.AddrStack.Mode = AddrModeFlat;
+				for (int i = 0; i < 48 && stackWalk( IMAGE_FILE_MACHINE_AMD64, process, s_profileMainThread, &frame, &ctx, x64ProfilerRead, tableAccess, moduleBase, nullptr ); ++i)
+				{
+					if (frame.AddrPC.Offset == 0)
+						break;
+					frames.push_back( frame.AddrPC.Offset );
+				}
+			}
+			if (!frames.empty())
+			{
+				stacks.insert( stacks.end(), frames.begin(), frames.end() );
+				stacks.push_back( 0 );
+				++samples;
+			}
+		}
+		Sleep( 1 );
+	}
+
+	// symbolize: address -> function name (cached)
+	std::map<DWORD64, std::string> names;
+	auto nameOf = [&]( DWORD64 pc ) -> const std::string & {
+		std::map<DWORD64, std::string>::iterator it = names.find( pc );
+		if (it != names.end())
+			return it->second;
+		char buffer[sizeof(SYMBOL_INFO) + 256] = {};
+		SYMBOL_INFO *sym = (SYMBOL_INFO *)buffer;
+		sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+		sym->MaxNameLen = 255;
+		DWORD64 displacement = 0;
+		std::string name;
+		if (symFromAddr( process, pc, &displacement, sym ))
+			name = sym->Name;
+		else
+		{
+			char hex[32]; sprintf( hex, "?%llX", (unsigned long long)(pc & ~0xFFFull) ); name = hex;
+		}
+		return names[pc] = name;
+	};
+	std::map<std::string, int> exclusive, inclusive;
+	size_t i = 0;
+	while (i < stacks.size())
+	{
+		bool first = true;
+		std::vector<const std::string *> seen;
+		for (; i < stacks.size() && stacks[i] != 0; ++i)
+		{
+			const std::string &n = nameOf( stacks[i] );
+			if (first) { ++exclusive[n]; first = false; }
+			if (std::find( seen.begin(), seen.end(), &n ) == seen.end()) { seen.push_back( &n ); ++inclusive[n]; }
+		}
+		++i;
+	}
+	FILE *out = fopen( "profile_x64.txt", "w" );
+	if (!out)
+		return 0;
+	fprintf( out, "%u samples of the main thread over %d s\n\n", (unsigned)samples, duration );
+	for (int pass = 0; pass < 2; ++pass)
+	{
+		std::map<std::string, int> &m = pass == 0 ? exclusive : inclusive;
+		std::vector<std::pair<int, std::string>> v;
+		for (std::map<std::string, int>::iterator it = m.begin(); it != m.end(); ++it)
+			v.push_back( std::make_pair( it->second, it->first ) );
+		std::sort( v.begin(), v.end(), []( const std::pair<int, std::string> &a, const std::pair<int, std::string> &b ) { return a.first > b.first; } );
+		fprintf( out, "%s\n", pass == 0 ? "== exclusive (the thread is in this function)" : "== inclusive (this function is on the stack)" );
+		for (size_t k = 0; k < v.size() && k < (pass == 0 ? 60u : 120u); ++k)
+			fprintf( out, "%6.2f%%  %s\n", 100.0 * v[k].first / (samples ? samples : 1), v[k].second.c_str() );
+		fprintf( out, "\n" );
+	}
+	fclose( out );
+	return 0;
+}
+#endif
+
+#ifdef _WIN64
 // TheSuperHackers @feature mohamed 20/11/2026 The x64 build has only crash handler stubs, so a crash left nothing behind.
 // This vectored handler writes the faulting address and a symbolized call stack (dbghelp + generalszh.pdb, loaded at run
 // time) to crash_x64.txt in the working directory: for access violations, heap corruption, stack overflow and the like.
@@ -907,6 +1064,11 @@ Int APIENTRY WinMain( HINSTANCE hInstance, HINSTANCE hPrevInstance,
 #ifdef _WIN64
 		if (!getenv("GENZH_NO_CRASHLOG"))
 			AddVectoredExceptionHandler( 1, x64CrashLogger );
+		if (const char *profileSpec = getenv("GENZH_PROFILE"))
+		{
+			DuplicateHandle( GetCurrentProcess(), GetCurrentThread(), GetCurrentProcess(), &s_profileMainThread, 0, FALSE, DUPLICATE_SAME_ACCESS );
+			CreateThread( nullptr, 0, x64ProfilerThread, (LPVOID)profileSpec, 0, nullptr );
+		}
 #endif
 		//
 		// there is something about checkin in and out the .dsp and .dsw files
