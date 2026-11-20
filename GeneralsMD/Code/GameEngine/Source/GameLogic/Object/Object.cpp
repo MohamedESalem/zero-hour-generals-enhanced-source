@@ -218,6 +218,14 @@ Object::Object( const ThingTemplate *tt, const ObjectStatusMaskType &objectStatu
 	m_visionSpiedMask (PLAYERMASK_NONE),
 	m_numTriggerAreasActive(0)
 {
+	// TheSuperHackers @feature mohamed 20/11/2026 -civilianScale: civilian buildings get a footprint as small as their
+	// look (ThingTemplate::getCivilianStructureScale), set before the object reaches the partition and pathfind maps.
+	{
+		const Real civilianScale = tt->getCivilianStructureScale();
+		if (civilianScale != 1.0f)
+			m_geometryInfo.set(m_geometryInfo.getGeomType(), m_geometryInfo.getIsSmall(), m_geometryInfo.getMaxHeightAbovePosition() * civilianScale,
+				m_geometryInfo.getMajorRadius() * civilianScale, m_geometryInfo.getMinorRadius() * civilianScale);
+	}
 #if defined(RTS_DEBUG)
 	m_hasDiedAlready = false;
 #endif

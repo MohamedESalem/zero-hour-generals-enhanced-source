@@ -577,6 +577,20 @@ Int parseUnitScale(char *args[], int num)
 	return 1;
 }
 
+#if RTS_ZEROHOUR
+// TheSuperHackers @feature mohamed 20/11/2026 -civilianScale <s>: civilian structures shrink by s on top of the world
+// scales (look and collision footprint); see ThingTemplate::getCivilianStructureScale.
+Int parseCivilianScale(char *args[], int num)
+{
+	if (num > 1)
+	{
+		TheWritableGlobalData->m_civilianStructureScale = (Real)atof(args[1]);
+		return 2;
+	}
+	return 1;
+}
+#endif
+
 // TheSuperHackers @feature mohamed 14/11/2026 World scaling ("true miniature"), see Common/WorldScale.h.
 // The raw values are stored as given; WorldScale::resolveFromGlobalData() applies the "<= 0 is ignored"
 // and "-worldScale only fills in what was not given explicitly" rules, so flag order cannot matter.
@@ -1442,6 +1456,9 @@ static CommandLineParam paramsForEngineInit[] =
 	{ "-maxZoom", parseMaxZoom },
 	{ "-yres", parseYRes },
 	{ "-unitScale", parseUnitScale },
+#if RTS_ZEROHOUR
+	{ "-civilianScale", parseCivilianScale },
+#endif
 	{ "-noWorldOverlay", parseNoWorldOverlay },
 	{ "-overlayDetailHeight", parseOverlayDetailHeight },
 	{ "-noConquest", parseNoConquest },

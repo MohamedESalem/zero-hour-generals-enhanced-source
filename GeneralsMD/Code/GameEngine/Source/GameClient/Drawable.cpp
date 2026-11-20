@@ -429,6 +429,7 @@ Drawable::Drawable( const ThingTemplate *thingTemplate, DrawableStatusBits statu
 	// purely cosmetic and cannot affect simulation state or cause a multiplayer mismatch.
 	if( TheGlobalData && TheGlobalData->m_unitVisualScale > 0.0f )
 		m_instanceScale *= TheGlobalData->m_unitVisualScale;
+	m_instanceScale *= thingTemplate->getCivilianStructureScale();	// -civilianScale: civilian buildings smaller still
 
 	// initially not bound to an object
 	m_object = nullptr;

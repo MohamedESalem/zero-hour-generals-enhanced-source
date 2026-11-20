@@ -544,6 +544,7 @@ public:
 		and want to get info for the "prototype" (eg, for building new Things)...
 	*/
 	const GeometryInfo& getTemplateGeometryInfo() const { return m_geometryInfo; }
+	Real getCivilianStructureScale() const;	///< -civilianScale for civilian structures (not tech buildings or bridges), else 1
 
 	//
 	// these are intended ONLY for the private use of ThingFactory and do not use

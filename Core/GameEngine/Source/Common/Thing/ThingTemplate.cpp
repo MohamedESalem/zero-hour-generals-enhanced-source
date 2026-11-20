@@ -1560,6 +1560,27 @@ Bool ThingTemplate::isBuildableItem() const
 	* that retrieve template data values use the get() wrappers, which *DO* pay
 	* attention to the override values */
 //-------------------------------------------------------------------------------------------------
+//-------------------------------------------------------------------------------------------------
+// TheSuperHackers @feature mohamed 20/11/2026 Civilian buildings (houses, offices, shops of the world map's cities) were
+// as large as a whole district at world scale. -civilianScale shrinks them further, look (Drawable) and footprint (Object)
+// alike. Tech buildings (oil, hospitals: the economy and conquest use them) and bridges keep the normal scale.
+//-------------------------------------------------------------------------------------------------
+Real ThingTemplate::getCivilianStructureScale() const
+{
+#if RTS_ZEROHOUR
+	const Real s = TheGlobalData ? TheGlobalData->m_civilianStructureScale : 1.0f;
+	if (s <= 0.0f || s == 1.0f)
+		return 1.0f;
+	if (!isKindOf(KINDOF_STRUCTURE) || isKindOf(KINDOF_TECH_BUILDING) || isKindOf(KINDOF_CAPTURABLE) || isKindOf(KINDOF_BRIDGE) || isKindOf(KINDOF_BRIDGE_TOWER))
+		return 1.0f;
+	if (!m_defaultOwningSide.isEmpty() && m_defaultOwningSide.compareNoCase("Civilian") != 0)	// faction buildings name their side; city buildings name none
+		return 1.0f;
+	return s;
+#else
+	return 1.0f;
+#endif
+}
+
 Int ThingTemplate::calcCostToBuild( const Player* player) const
 {
 	if (!player)
