@@ -19,7 +19,7 @@ struct VkGfx_Settings
 	float cloudCoverage = 0.20f;		// 0 clear sky .. 1 overcast
 	float cloudDensity = 0.85f;		// opacity of the clouds
 	float cloudSpeed = 1.0f;			// drift speed
-	float cloudShadowStrength = 0.85f;
+	float cloudShadowStrength = 0.45f;	// lighter than Reimagined's 0.85: on the world map the moving cloud shadows were large dark patches
 	// Options.ini keys DynamicLights, DynamicLightStrength, AnisotropicFiltering, PixelLighting, SpecularStrength
 	int shadowQuality = 1;			// 2 high (4096 shadow map, full filtering), 1 medium (2048 map, the default), 0 low (2048 map, fewer filter taps)
 	float shadowMaxCameraHeight = 1200.0f;	// ShadowMaxCameraHeight: no sun shadows above this camera height (0 = always); far out they cannot be seen but cost a second pass over everything

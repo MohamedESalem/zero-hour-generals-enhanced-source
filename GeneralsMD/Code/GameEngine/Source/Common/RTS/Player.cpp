@@ -3196,6 +3196,20 @@ Bool Player::okToPlayRadarEdgeSound()
 
 }
 
+// TheSuperHackers @diagnostic mohamed 20/11/2026 GENZH_WORLD_LOG: the local player's radar going on or off (and why) goes to
+// WorldLog.txt, to tell "the minimap is gone" (no radar: low power, lost radar building, EMP) from a drawing problem.
+static void radarLog( const Player *p, const char *what, Int count, Bool disabled, Bool has )
+{
+	static const Bool on = getenv( "GENZH_WORLD_LOG" ) != nullptr;
+	if( !on || p == nullptr || p != ThePlayerList->getLocalPlayer() )
+		return;
+	if( FILE *f = fopen( "WorldLog.txt", "a" ) )
+	{
+		fprintf( f, "frame %u: local player radar %s -> count %d, disabled %d, has radar %d\n", TheGameLogic ? TheGameLogic->getFrame() : 0, what, count, (int)disabled, (int)has );
+		fclose( f );
+	}
+}
+
 //-------------------------------------------------------------------------------------------------
 /** The parameter object has just acquired a radar */
 //-------------------------------------------------------------------------------------------------
@@ -3208,6 +3222,7 @@ void Player::addRadar( Bool disableProof )
 
 	if( disableProof )
 		++m_disableProofRadarCount;// Disable proof is also in the normal refcount
+	radarLog( this, "added", m_radarCount, m_radarDisabled, hasRadar() );
 
 	if( !hadRadar && hasRadar()	&& okToPlayRadarEdgeSound() )
 	{
@@ -3231,6 +3246,7 @@ void Player::removeRadar( Bool disableProof )
 
 	if( disableProof )
 		--m_disableProofRadarCount;// Disable proof is also in the normal refcount
+	radarLog( this, "removed", m_radarCount, m_radarDisabled, hasRadar() );
 
 	if( hadRadar && !hasRadar()	&& okToPlayRadarEdgeSound() )
 	{
@@ -3246,6 +3262,7 @@ void Player::disableRadar()
 {
 	Bool hadRadar = hasRadar();
 	m_radarDisabled = TRUE;
+	radarLog( this, "disabled (power or EMP)", m_radarCount, m_radarDisabled, hasRadar() );
 
 	if( hadRadar &&
 		!hasRadar() && okToPlayRadarEdgeSound() )
@@ -3262,6 +3279,7 @@ void Player::enableRadar()
 {
 	Bool hadRadar = hasRadar();
 	m_radarDisabled = FALSE;
+	radarLog( this, "enabled", m_radarCount, m_radarDisabled, hasRadar() );
 
 	if( !hadRadar && hasRadar() && okToPlayRadarEdgeSound() )
 	{
