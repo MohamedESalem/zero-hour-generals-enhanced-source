@@ -46,6 +46,7 @@
 #include "Common/GameCommon.h"
 #include "Common/GameType.h"
 #include "Common/Snapshot.h"
+#include "Common/UnicodeString.h"
 
 #include <map>
 #include <vector>
@@ -88,6 +89,23 @@ public:
 	/// Ground distance between two points, the short way round when the map wraps.
 	Real distance( const Coord3D *a, const Coord3D *b ) const;
 
+	/// A one-way (suicide) order of the local player, held back until the player confirms it.
+	struct Question
+	{
+		Int												cmd;					///< AICommandType of the order
+		Coord3D										pos;					///< where it was aimed
+		ObjectID									target;				///< the object it was aimed at, if any
+		std::vector<ObjectID>			aircraft;			///< the aircraft it would send one way
+		UnicodeString							name;					///< of the first of them
+		Real											km;						///< how far from home the target is
+	};
+
+	/// The question raised by the last one-way order of the local player, once (InGameUI shows it). False if none.
+	Bool takeQuestion( Question *question );
+
+	/// The player said yes: the same order again through the message stream, which the logic takes as the confirmation.
+	static void confirmQuestion( const Question &question );
+
 protected:
 
 	virtual void crc( Xfer *xfer ) override;
@@ -114,8 +132,12 @@ private:
 		Bool				returning;					///< we sent it home for fuel and it has not yet come back inside its ring
 		Bool				virtualHome;				///< no airfield / helipad existed when first seen (a map's defender army): home is its starting point
 		Bool				doomed;							///< a one-way aircraft ordered back: it crashes at the next check
-		Coord3D			lastOrderPos;
-		Bool hasHome() const { return home != INVALID_ID || virtualHome; }				///< target of the last player order judged (so a repeat does not warn twice)
+		Coord3D			lastOrderPos;				///< target of the last player order judged (so a repeat does not warn twice)
+		ObjectID		lastOrderObj;				///< ... and the object it was aimed at, if any
+		Coord3D			askPos;							///< a one-way order the player was asked about ...
+		ObjectID		askObj;
+		UnsignedInt	askFrame;						///< ... and when (0 = none): the same order again soon after is the "yes"
+		Bool hasHome() const { return home != INVALID_ID || virtualHome; }
 	};
 
 	void loadTable();
@@ -130,6 +152,7 @@ private:
 	void crash( Object *obj, const char *why );
 	void tell( const Object *obj, const UnicodeString &text );
 	void runSelfTest( UnsignedInt now );
+	void addQuestion( const Object *obj, Int cmd, const Coord3D *pos, ObjectID target, Real distance );
 
 	Bool													m_loaded;
 	Bool													m_active;
@@ -146,6 +169,9 @@ private:
 	mutable Bool									m_basesValid;
 	mutable UnsignedInt						m_basesFrame;
 	mutable std::vector<ObjectID>	m_bases;							///< every airfield / helipad, gathered once per frame
+	Question											m_question;
+	Bool													m_questionReady;
+	UnsignedInt										m_questionFrame;
 };
 
 extern AircraftRangeManager *TheAircraftRange;

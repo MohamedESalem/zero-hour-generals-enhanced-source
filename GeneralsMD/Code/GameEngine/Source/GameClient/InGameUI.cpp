@@ -73,6 +73,7 @@
 #include "GameClient/WindowLayout.h"
 #include "GameClient/WorldOverlay.h"
 #include "GameLogic/AircraftRange.h"
+#include "GameClient/MessageBox.h"
 #include "GameClient/LookAtXlat.h"
 #include "GameClient/SelectionXlat.h"
 #include "GameClient/Shadow.h"
@@ -5648,6 +5649,22 @@ void InGameUI::drawWorldOverlay()
 }
 
 //-------------------------------------------------------------------------------------------------
+// TheSuperHackers @feature mohamed 20/11/2026 aircraft range: the "suicide mission?" question for a held one-way order.
+//-------------------------------------------------------------------------------------------------
+static AircraftRangeManager::Question s_rangeQuestion;
+static Bool s_rangeQuestionOpen = FALSE;
+static UnsignedInt s_rangeQuestionOpenedAt = 0;
+static void rangeQuestionYes()
+{
+	s_rangeQuestionOpen = FALSE;
+	AircraftRangeManager::confirmQuestion( s_rangeQuestion );
+}
+static void rangeQuestionNo()
+{
+	s_rangeQuestionOpen = FALSE;
+}
+
+//-------------------------------------------------------------------------------------------------
 static Bool clipRangeSegment( Real &x1, Real &y1, Real &x2, Real &y2, Real left, Real top, Real right, Real bottom )
 {
 	const Real dx = x2 - x1;
@@ -5737,6 +5754,25 @@ void InGameUI::drawAircraftRange()
 	Player *local = ThePlayerList->getLocalPlayer();
 	if( local == nullptr )
 		return;
+
+	// a held one-way order: ask the player; on yes the order is sent again (AircraftRangeManager::confirmQuestion)
+	if( s_rangeQuestionOpen && TheGameLogic->getFrame() > s_rangeQuestionOpenedAt + 300 * LOGICFRAMES_PER_SECOND )
+		s_rangeQuestionOpen = FALSE;	// the box went away without an answer
+	AircraftRangeManager::Question question;
+	if( TheAircraftRange->takeQuestion( &question ) && !s_rangeQuestionOpen )
+	{
+		s_rangeQuestion = question;
+		s_rangeQuestionOpen = TRUE;
+		s_rangeQuestionOpenedAt = TheGameLogic->getFrame();
+		UnicodeString body;
+		if( question.aircraft.size() > 1 )
+			body.format( L"%d aircraft (%s and others) cannot fly %.0f km and come back.\n\nAre you sure you want to send them on a suicide mission? They will crash and not return.",
+				(Int)question.aircraft.size(), question.name.str(), question.km );
+		else
+			body.format( L"%s cannot fly %.0f km and come back.\n\nAre you sure you want to send it on a suicide mission? It will crash and not return.",
+				question.name.str(), question.km );
+		MessageBoxYesNo( UnicodeString( L"Suicide mission" ), body, rangeQuestionYes, rangeQuestionNo );
+	}
 
 	const Color white = GameMakeColor( 255, 255, 255, 210 );
 	const Color red = GameMakeColor( 255, 45, 45, 230 );

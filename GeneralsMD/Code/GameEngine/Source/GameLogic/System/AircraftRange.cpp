@@ -40,6 +40,8 @@
 #include "Common/Xfer.h"
 #include "Common/file.h"
 
+#include "Common/MessageStream.h"
+#include "GameClient/Drawable.h"
 #include "GameClient/InGameUI.h"
 
 #include "GameLogic/AI.h"
@@ -59,8 +61,11 @@ AircraftRangeManager *TheAircraftRange = nullptr;
 enum
 {
 	AIRCRAFT_RANGE_CHECK_INTERVAL = 5,				///< logic frames between two looks at the aircraft
-	AIRCRAFT_RANGE_XFER_VERSION = 1
+	AIRCRAFT_RANGE_XFER_VERSION = 2,						///< 2: the one-way question (ask*, lastOrderObj)
+	AIRCRAFT_RANGE_CONFIRM_FRAMES = 60 * LOGICFRAMES_PER_SECOND	///< how long a one-way question stays open
 };
+
+static const Real AIRCRAFT_RANGE_CONFIRM_SLOP = 250.0f;	///< world units a confirmed order may differ by (group moves spread their goals)
 
 static const char *AIRCRAFT_RANGE_FILE = "Data\\INI\\AircraftRange.ini";
 
@@ -129,7 +134,9 @@ AircraftRangeManager::AircraftRangeManager() :
 	m_refuelDistance( 20.0f ),
 	m_lastMessageFrame( 0 ),
 	m_basesValid( FALSE ),
-	m_basesFrame( 0 )
+	m_basesFrame( 0 ),
+	m_questionReady( FALSE ),
+	m_questionFrame( 0 )
 {
 }
 
@@ -147,6 +154,9 @@ void AircraftRangeManager::reset()
 	m_lastMessageFrame = 0;
 	m_basesValid = FALSE;
 	m_bases.clear();
+	m_questionReady = FALSE;
+	m_questionFrame = 0;
+	m_question.aircraft.clear();
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -386,6 +396,10 @@ AircraftRangeManager::Craft &AircraftRangeManager::getCraft( Object *obj )
 	craft.doomed = FALSE;
 	craft.virtualHome = FALSE;
 	craft.lastOrderPos.zero();
+	craft.lastOrderObj = INVALID_ID;
+	craft.askPos.zero();
+	craft.askObj = INVALID_ID;
+	craft.askFrame = 0;
 
 	// first home: the airfield / helipad that built it, else the nearest one of its owner
 	const Player *owner = obj->getControllingPlayer();
@@ -742,8 +756,11 @@ Bool AircraftRangeManager::filterCommand( Object *obj, const AICommandParms *par
 
 	Craft &craft = getCraft( obj );
 	const Player *owner = obj->getControllingPlayer();
-	const Bool repeat = craft.lastOrderPos.x == target.x && craft.lastOrderPos.y == target.y;
+	const ObjectID targetID = targetObj != nullptr ? targetObj->getID() : INVALID_ID;
+	const Bool repeat = targetID != INVALID_ID ? craft.lastOrderObj == targetID
+		: ( craft.lastOrderObj == INVALID_ID && craft.lastOrderPos.x == target.x && craft.lastOrderPos.y == target.y );
 	craft.lastOrderPos = target;
+	craft.lastOrderObj = targetID;
 
 	// another airfield / helipad of the same player: a move, if it is within the red ring
 	const Object *base = nullptr;
@@ -768,14 +785,34 @@ Bool AircraftRangeManager::filterCommand( Object *obj, const AICommandParms *par
 
 	if( base != nullptr && base->getID() != craft.home && d <= 2.0f * radius )
 	{
+		// A jet lands only where it is told to enter: a move or attack order onto the other airfield becomes that
+		// (a parked jet takes off first, as for any order). Helicopters fly there and refuel when idle.
+		JetAIUpdate *jet = obj->getAI() ? obj->getAI()->getJetAIUpdate() : nullptr;
+		if( jet != nullptr && parms->m_cmd != AICMD_ENTER && parms->m_cmd != AICMD_DOCK && parms->m_cmd != AICMD_GET_REPAIRED )
+		{
+			ParkingPlaceBehaviorInterface *pp = findParkingPlace( base );
+			if( pp != nullptr && !obj->isKindOf( KINDOF_PRODUCED_AT_HELIPAD ) && !pp->hasAvailableSpaceFor( obj->getTemplate() ) )
+			{
+				UnicodeString text;
+				text.format( L"%s: no free parking space at that airfield", name.str() );
+				tell( obj, text );
+				rangeLog( "%s %u: no free parking at airfield %u", obj->getTemplate()->getName().str(), obj->getID(), base->getID() );
+				return FALSE;
+			}
+			rangeLog( "%s %u: order onto airfield %u turned into landing there", obj->getTemplate()->getName().str(), obj->getID(), base->getID() );
+			obj->getAI()->aiEnter( const_cast<Object *>( base ), CMD_FROM_PLAYER );
+			return FALSE;
+		}
+
 		craft.mode = MODE_REBASE;
 		craft.rebaseTarget = base->getID();
 		craft.returning = FALSE;
 		craft.timerStart = 0;
+		craft.askFrame = 0;
 		if( !repeat )
 		{
 			UnicodeString text;
-			text.format( L"%s: rebasing to another airfield (%.0f km)", name.str(), d * m_kmPerUnit );
+			text.format( L"%s: moving to another airfield (%.0f km)", name.str(), d * m_kmPerUnit );
 			tell( obj, text );
 		}
 		rangeLog( "%s %u rebase to %u, %.0f units", obj->getTemplate()->getName().str(), obj->getID(), base->getID(), d );
@@ -798,18 +835,33 @@ Bool AircraftRangeManager::filterCommand( Object *obj, const AICommandParms *par
 
 	if( d <= 2.0f * radius )
 	{
-		if( craft.mode != MODE_ONE_WAY )
+		// the same one-way order judged again (a jet judges every order twice, and again when it was pending)
+		if( craft.mode == MODE_ONE_WAY && repeat )
+			return TRUE;
+
+		// the player has to say yes first: the same order again soon after the question is the "yes"
+		const UnsignedInt now = TheGameLogic->getFrame();
+		const Bool confirmed = craft.askFrame != 0 && now - craft.askFrame <= AIRCRAFT_RANGE_CONFIRM_FRAMES
+			&& ( targetID != INVALID_ID ? craft.askObj == targetID
+				: ( craft.askObj == INVALID_ID && dist2D( &craft.askPos, &target ) <= AIRCRAFT_RANGE_CONFIRM_SLOP ) );
+		if( !confirmed )
 		{
-			craft.mode = MODE_ONE_WAY;
-			craft.timerStart = 0;
+			craft.askFrame = now;
+			craft.askPos = target;
+			craft.askObj = targetID;
+			addQuestion( obj, parms->m_cmd, &target, targetID, d );
+			rangeLog( "%s %u one-way order held: asked the player (%.0f units, radius %.0f)", obj->getTemplate()->getName().str(),
+				obj->getID(), d, radius );
+			return FALSE;
 		}
+
+		craft.askFrame = 0;
+		craft.mode = MODE_ONE_WAY;
+		craft.timerStart = 0;
 		craft.returning = FALSE;
-		if( !repeat )
-		{
-			UnicodeString text;
-			text.format( L"Suicide mission: %s cannot fly %.0f km and back. It will not return.", name.str(), d * m_kmPerUnit );
-			tell( obj, text );
-		}
+		UnicodeString text;
+		text.format( L"%s is on a one-way mission. It will not return.", name.str() );
+		tell( obj, text );
 		rangeLog( "%s %u one-way, %.0f units (radius %.0f)", obj->getTemplate()->getName().str(), obj->getID(), d, radius );
 		return TRUE;
 	}
@@ -820,6 +872,109 @@ Bool AircraftRangeManager::filterCommand( Object *obj, const AICommandParms *par
 	tell( obj, text );
 	rangeLog( "%s %u refused, %.0f units (radius %.0f)", obj->getTemplate()->getName().str(), obj->getID(), d, radius );
 	return FALSE;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** A one-way order of the local player was held back: collect it (a group order holds every aircraft in the same
+	* frame) for InGameUI to ask about. Other players' machines ask their own players. */
+//-------------------------------------------------------------------------------------------------
+void AircraftRangeManager::addQuestion( const Object *obj, Int cmd, const Coord3D *pos, ObjectID target, Real d )
+{
+	if( ThePlayerList == nullptr || obj->getControllingPlayer() != ThePlayerList->getLocalPlayer() )
+		return;
+
+	const UnsignedInt now = TheGameLogic->getFrame();
+	if( m_questionFrame != now || !m_questionReady )
+	{
+		m_question.cmd = cmd;
+		m_question.pos = *pos;
+		m_question.target = target;
+		m_question.aircraft.clear();
+		m_question.name = nameOf( obj );
+		m_question.km = 0.0f;
+		m_questionFrame = now;
+		m_questionReady = TRUE;
+	}
+	for( std::vector<ObjectID>::const_iterator it = m_question.aircraft.begin(); it != m_question.aircraft.end(); ++it )
+	{
+		if( *it == obj->getID() )
+			return;
+	}
+	m_question.aircraft.push_back( obj->getID() );
+	if( d * m_kmPerUnit > m_question.km )
+		m_question.km = d * m_kmPerUnit;
+}
+
+//-------------------------------------------------------------------------------------------------
+Bool AircraftRangeManager::takeQuestion( Question *question )
+{
+	if( !m_questionReady )
+		return FALSE;
+	m_questionReady = FALSE;
+	if( TheGameLogic->getFrame() > m_questionFrame + 2 * LOGICFRAMES_PER_SECOND )
+		return FALSE;	// stale (the UI was not drawing)
+	*question = m_question;
+	return TRUE;
+}
+
+//-------------------------------------------------------------------------------------------------
+/** Client side: the player said yes. Send the same order again for those aircraft through the message stream (so
+	* every machine of a network game sees the same thing), then give the logic back the player's current selection. */
+//-------------------------------------------------------------------------------------------------
+void AircraftRangeManager::confirmQuestion( const Question &question )
+{
+	if( TheMessageStream == nullptr || question.aircraft.empty() )
+		return;
+
+	GameMessage *group = TheMessageStream->appendMessage( GameMessage::MSG_CREATE_SELECTED_GROUP_NO_SOUND );
+	group->appendBooleanArgument( TRUE );
+	for( std::vector<ObjectID>::const_iterator it = question.aircraft.begin(); it != question.aircraft.end(); ++it )
+		group->appendObjectIDArgument( *it );
+
+	GameMessage *order = nullptr;
+	switch( question.cmd )
+	{
+		case AICMD_ATTACK_OBJECT:
+		case AICMD_FORCE_ATTACK_OBJECT:
+			if( question.target != INVALID_ID )
+			{
+				order = TheMessageStream->appendMessage( question.cmd == AICMD_ATTACK_OBJECT
+					? GameMessage::MSG_DO_ATTACK_OBJECT : GameMessage::MSG_DO_FORCE_ATTACK_OBJECT );
+				order->appendObjectIDArgument( question.target );
+			}
+			break;
+		case AICMD_ATTACK_POSITION:
+			order = TheMessageStream->appendMessage( GameMessage::MSG_DO_FORCE_ATTACK_GROUND );
+			order->appendLocationArgument( question.pos );
+			break;
+		case AICMD_ATTACKMOVE_TO_POSITION:
+			order = TheMessageStream->appendMessage( GameMessage::MSG_DO_ATTACKMOVETO );
+			order->appendLocationArgument( question.pos );
+			break;
+		default:
+			break;
+	}
+	if( order == nullptr )
+	{
+		order = TheMessageStream->appendMessage( GameMessage::MSG_DO_MOVETO );
+		order->appendLocationArgument( question.pos );
+	}
+
+	// the logic's selected group must match what the player sees selected again
+	if( TheInGameUI != nullptr && TheInGameUI->getSelectCount() > 0 )
+	{
+		GameMessage *selection = TheMessageStream->appendMessage( GameMessage::MSG_CREATE_SELECTED_GROUP_NO_SOUND );
+		selection->appendBooleanArgument( TRUE );
+		const DrawableList *selected = TheInGameUI->getAllSelectedDrawables();
+		for( DrawableList::const_iterator it = selected->begin(); it != selected->end(); ++it )
+		{
+			const Object *obj = *it ? ( *it )->getObject() : nullptr;
+			if( obj != nullptr )
+				selection->appendObjectIDArgument( obj->getID() );
+		}
+	}
+	else
+		TheMessageStream->appendMessage( GameMessage::MSG_DESTROY_SELECTED_GROUP );
 }
 
 //-------------------------------------------------------------------------------------------------
@@ -859,6 +1014,7 @@ void AircraftRangeManager::runSelfTest( UnsignedInt now )
 	static ObjectID baseID = INVALID_ID;
 	static ObjectID maxOldID = INVALID_ID;
 	static ObjectID unitID[ 3 ] = { INVALID_ID, INVALID_ID, INVALID_ID };
+	static ObjectID secondID = INVALID_ID;
 	static UnsignedInt stageFrame = 0;
 	static UnsignedInt firstFrame = 0;
 
@@ -954,6 +1110,16 @@ void AircraftRangeManager::runSelfTest( UnsignedInt now )
 			unitID[ i ] = unit->getID();
 		}
 		rangeLog( "selftest: created %s %u (in the air) and 2 x %s %u %u", names[ 0 ], unitID[ 0 ], names[ 1 ], unitID[ 1 ], unitID[ 2 ] );
+
+		// a second airfield 1.5 jet radii east: beyond the white ring of both types, inside the red ring of both
+		Coord3D secondPos = *base->getPosition();
+		secondPos.x += 1.5f * getRadius( TheGameLogic->findObjectByID( unitID[ 0 ] ) );
+		secondPos.z = TheTerrainLogic->getGroundHeight( secondPos.x, secondPos.y );
+		Object *second = TheThingFactory->newObject( TheThingFactory->findTemplate( "AmericaAirfield" ), local->getDefaultTeam() );
+		second->setPosition( &secondPos );
+		secondID = second->getID();
+		m_basesValid = FALSE;
+		rangeLog( "selftest: second airfield %u at %.0f units", secondID, distance( base->getPosition(), &secondPos ) );
 		stage = 1;
 		stageFrame = now;
 		return;
@@ -1014,17 +1180,33 @@ void AircraftRangeManager::runSelfTest( UnsignedInt now )
 		units[ 0 ]->getAI()->aiMoveToPosition( &p, CMD_FROM_PLAYER );
 		rangeLog( "selftest: jet ordered 2.6 R east (expect refused): mode %d", m_crafts[ unitID[ 0 ] ].mode );
 
-		p = *b; p.x += 0.7f * rj;
-		units[ 0 ]->getAI()->aiMoveToPosition( &p, CMD_FROM_PLAYER );
-		rangeLog( "selftest: jet ordered 0.7 R east (expect normal): mode %d", m_crafts[ unitID[ 0 ] ].mode );
+		Object *second = TheGameLogic->findObjectByID( secondID );
+		if( second == nullptr )
+		{
+			rangeLog( "selftest: the second airfield is gone" );
+			stage = 3;
+			return;
+		}
+		const Coord3D secondPos = *second->getPosition();
+
+		units[ 0 ]->getAI()->aiMoveToPosition( &secondPos, CMD_FROM_PLAYER );
+		rangeLog( "selftest: parked jet ordered onto the second airfield (expect: turned into landing there)" );
 
 		p = *b; p.y += 1.5f * rh;
 		units[ 1 ]->getAI()->aiMoveToPosition( &p, CMD_FROM_PLAYER );
-		rangeLog( "selftest: heli 1 ordered 1.5 R north (expect one-way, then crash): mode %d", m_crafts[ unitID[ 1 ] ].mode );
+		rangeLog( "selftest: heli 1 ordered 1.5 R north (expect held + question): mode %d", m_crafts[ unitID[ 1 ] ].mode );
+		Question question;
+		if( takeQuestion( &question ) )
+		{
+			rangeLog( "selftest: question: %d aircraft, %.0f km; answering yes", (Int)question.aircraft.size(), question.km );
+			confirmQuestion( question );
+		}
+		else
+			rangeLog( "selftest: NO question raised" );
 
-		p = *b; p.y -= 1.8f * rh;
-		units[ 2 ]->getAI()->aiMoveToPosition( &p, CMD_FROM_SCRIPT );
-		rangeLog( "selftest: heli 2 sent 1.8 R south by script (expect leash: sent home): mode %d", m_crafts[ unitID[ 2 ] ].mode );
+		p = secondPos; p.y += 50.0f;
+		units[ 2 ]->getAI()->aiMoveToPosition( &p, CMD_FROM_PLAYER );
+		rangeLog( "selftest: heli 2 ordered to the second airfield (expect rebase, then home = it): mode %d", m_crafts[ unitID[ 2 ] ].mode );
 
 		stage = 2;
 		stageFrame = now;
@@ -1044,8 +1226,9 @@ void AircraftRangeManager::runSelfTest( UnsignedInt now )
 				}
 				std::map<ObjectID, Craft>::const_iterator it = m_crafts.find( unitID[ i ] );
 				const Coord3D *pos = units[ i ]->getPosition();
-				rangeLog( "selftest: unit %d %s mode %d, %.0f units from home, %s, idle %d",
-					i, units[ i ]->getTemplate()->getName().str(), it != m_crafts.end() ? it->second.mode : -1,
+				rangeLog( "selftest: unit %d %s home %u mode %d, %.0f units from home, %s, idle %d",
+					i, units[ i ]->getTemplate()->getName().str(), it != m_crafts.end() ? it->second.home : 0,
+					it != m_crafts.end() ? it->second.mode : -1,
 					it != m_crafts.end() ? distance( pos, &it->second.homePos ) : -1.0f,
 					units[ i ]->isAirborneTarget() ? "airborne" : "on ground", units[ i ]->getAI()->isIdle() );
 			}
@@ -1096,6 +1279,13 @@ void AircraftRangeManager::xfer( Xfer *xfer )
 			xfer->xferCoord3D( &c.lastOrderPos );
 			xfer->xferBool( &c.doomed );
 			xfer->xferBool( &c.virtualHome );
+			if( version >= 2 )
+			{
+				xfer->xferObjectID( &c.lastOrderObj );
+				xfer->xferCoord3D( &c.askPos );
+				xfer->xferObjectID( &c.askObj );
+				xfer->xferUnsignedInt( &c.askFrame );
+			}
 		}
 	}
 	else
@@ -1105,6 +1295,10 @@ void AircraftRangeManager::xfer( Xfer *xfer )
 		{
 			ObjectID id = INVALID_ID;
 			Craft c;
+			c.lastOrderObj = INVALID_ID;
+			c.askPos.zero();
+			c.askObj = INVALID_ID;
+			c.askFrame = 0;
 			xfer->xferObjectID( &id );
 			xfer->xferObjectID( &c.home );
 			xfer->xferCoord3D( &c.homePos );
@@ -1115,6 +1309,13 @@ void AircraftRangeManager::xfer( Xfer *xfer )
 			xfer->xferCoord3D( &c.lastOrderPos );
 			xfer->xferBool( &c.doomed );
 			xfer->xferBool( &c.virtualHome );
+			if( version >= 2 )
+			{
+				xfer->xferObjectID( &c.lastOrderObj );
+				xfer->xferCoord3D( &c.askPos );
+				xfer->xferObjectID( &c.askObj );
+				xfer->xferUnsignedInt( &c.askFrame );
+			}
 			m_crafts[ id ] = c;
 		}
 		rangeLog( "loaded %u aircraft states from the save game", count );
